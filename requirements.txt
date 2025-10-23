@@ -1,0 +1,25 @@
+# Core dependencies
+pyyaml>=6.0
+psutil>=5.9.0
+tqdm>=4.65.0
+
+# Transcription
+git+https://github.com/m-bain/whisperX.git
+
+# TTS
+chatterbox-tts>=0.1.0
+
+# Audio/Video processing
+torch>=2.0.0
+torchaudio>=2.0.0
+ffmpeg-python>=0.2.0
+
+# Optional: Alternative TTS backends
+# coqui-tts>=0.13.0
+
+# Development dependencies (optional)
+# pytest>=7.3.0
+# pytest-cov>=4.1.0
+# black>=23.3.0
+# flake8>=6.0.0
+# mypy>=1.3.0

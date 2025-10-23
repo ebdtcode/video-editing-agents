@@ -1,0 +1,66 @@
+# Video Edit Agents - Default Configuration
+# Edit this file to customize processing settings
+
+# Processing settings
+processing:
+  min_segment_duration: 0.5  # Minimum segment duration in seconds
+  max_segment_duration: 30.0  # Maximum segment duration in seconds
+  max_workers: 0  # Number of parallel workers (0 = auto-detect)
+
+# Filler word detection
+fillers:
+  mode: rule-based  # 'rule-based' or 'ml'
+  words:
+    - uh
+    - um
+    - ah
+    - okay
+    - ok
+    - like
+    - you know
+    - so
+    - basically
+    - alright
+    - right
+  confidence_threshold: 0.8  # For ML mode
+
+# Transcription settings
+transcription:
+  backend: whisperx
+  model: large-v2  # Options: tiny, base, small, medium, large, large-v2
+  language: auto  # Auto-detect or specify (en, es, fr, etc.)
+  device: cuda  # 'cuda' for GPU, 'cpu' for CPU
+  compute_type: float16  # GPU precision (float16, int8)
+
+# Text-to-Speech settings
+tts:
+  backend: chatterbox  # Options: chatterbox, coqui
+  voice_cloning: true  # Clone voice from original audio
+  sample_rate: 44100
+  normalize: true  # Normalize audio volume
+  device: cuda  # 'cuda' for GPU, 'cpu' for CPU
+
+# Video processing settings
+video:
+  sync_mode: retime  # 'retime' or 'stretch'
+  quality: high  # high, medium, low
+  codec: h264
+  bitrate: 5M
+
+  # Transition effects between segments
+  transitions:
+    enabled: true
+    type: crossfade  # crossfade, dissolve, none
+    duration: 0.3  # Transition duration in seconds
+
+# Output settings
+output:
+  format: mp4
+  temp_dir: ./temp_segments
+  keep_intermediates: false  # Keep temporary files
+  checkpoint: true  # Enable checkpoint/resume support
+
+# Logging settings
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  file: video_processing.log

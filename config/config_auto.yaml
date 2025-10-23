@@ -1,0 +1,5 @@
+# config_auto.yaml
+tts:
+  backend: chatterbox
+  voice_mode: auto
+  device: cpu

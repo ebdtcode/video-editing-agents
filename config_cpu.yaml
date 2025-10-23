@@ -1,0 +1,79 @@
+# Video Edit Agents - CPU-Optimized Configuration
+# For systems without CUDA/GPU support (macOS, etc.)
+
+# Processing settings
+processing:
+  min_segment_duration: 0.5  # Minimum segment duration in seconds
+  max_segment_duration: 30.0  # Maximum segment duration in seconds
+  max_workers: 0  # Number of parallel workers (0 = auto-detect)
+
+# Filler word detection
+fillers:
+  mode: rule-based  # 'rule-based' or 'ml'
+  words:
+    - uh
+    - um
+    - ah
+    - okay
+    - ok
+    - like
+    - you know
+    - so
+    - basically
+    - alright
+    - right
+  confidence_threshold: 0.8  # For ML mode
+
+# Transcription settings (CPU mode)
+transcription:
+  backend: whisperx
+  model: base  # Using smaller model for CPU (tiny, base, small, medium, large, large-v2)
+  language: auto  # Auto-detect or specify (en, es, fr, etc.)
+  device: cpu  # CPU mode for macOS
+  compute_type: int8  # CPU precision (int8 for CPU, float16 for GPU)
+
+# Text-to-Speech settings (CPU mode)
+tts:
+  backend: chatterbox  # Options: chatterbox, coqui
+
+  # Voice mode: How to select the TTS voice
+  # - "default": Use Chatterbox's default voice (no voice cloning)
+  # - "auto": Auto-extract voice from first 30 seconds of video (voice cloning)
+  # - "custom": Use a custom voice reference file (requires voice_reference path)
+  voice_mode: custom  # Options: default, auto, custom
+
+  # Custom voice reference file (only used when voice_mode: custom)
+  voice_reference: "voices/sample_voice_yt.wav"
+  # Examples:
+  #   voice_reference: "voices/male_voice.wav"
+  #   voice_reference: "temp_segments/voice_reference.wav"
+  #   voice_reference: "/absolute/path/to/voice.wav"
+
+  sample_rate: 24000  # Chatterbox default
+  normalize: true  # Normalize audio volume
+  device: cpu  # CPU mode for macOS
+
+# Video processing settings
+video:
+  sync_mode: retime  # 'retime' or 'stretch'
+  quality: high  # high, medium, low
+  codec: h264
+  bitrate: 5M
+
+  # Transition effects between segments
+  transitions:
+    enabled: true
+    type: crossfade  # crossfade, dissolve, none
+    duration: 0.3  # Transition duration in seconds
+
+# Output settings
+output:
+  format: mp4
+  temp_dir: ./temp_segments
+  keep_intermediates: true  # Keep temporary files for text correction workflow
+  checkpoint: true  # Enable checkpoint/resume support
+
+# Logging settings
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  file: video_processing.log

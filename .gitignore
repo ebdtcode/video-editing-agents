@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+videos/
+voices/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.claude/
+output/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Working docs (as per CLAUDE.md)
+working_docs/
+
+# Temporary processing files
+temp_segments/
+test_output/
+temp/
+*.log
+*.tmp
+
+# Output files
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wav
+*.mp3
+
+# Transcription files
+transcriptions/
+
+# Checkpoint files
+checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Model files
+models/
+*.pth
+*.pt
+*.ckpt
+
+# Configs (keep templates, ignore user configs)
+config.yaml
+!config/default_config.yaml
+tests/

@@ -1,0 +1,6 @@
+# config_custom.yaml
+tts:
+  backend: chatterbox
+  voice_mode: custom
+  voice_reference: "voices/sample_voice_yt.wav"
+  device: cpu
