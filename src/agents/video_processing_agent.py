@@ -97,7 +97,9 @@ class VideoProcessingAgent:
                 raw_segment_path,
                 segment.start,
                 segment.end,
-                include_audio=False  # Remove original audio
+                include_audio=False,  # Remove original audio
+                use_gpu=self.config.gpu_acceleration,
+                hwaccel=self.config.hwaccel
             )
 
             # Synchronize video with TTS audio (PERFECT SYNC)
@@ -189,7 +191,13 @@ class VideoProcessingAgent:
 
         # Retime video
         retimed_path = output_path.parent / f"{output_path.stem}_retimed.mp4"
-        retime_video(video_path, retimed_path, speed_factor)
+        retime_video(
+            video_path,
+            retimed_path,
+            speed_factor,
+            use_gpu=self.config.gpu_acceleration,
+            hwaccel=self.config.hwaccel
+        )
 
         # Merge with audio
         merge_video_audio(
@@ -295,7 +303,13 @@ class VideoProcessingAgent:
             # PTS (Presentation Timestamp) = speed_factor * original_PTS
             # Speed > 1.0 = speed up (compress time)
             # Speed < 1.0 = slow down (expand time)
-            retime_video(video_path, retimed_path, speed_factor)
+            retime_video(
+                video_path,
+                retimed_path,
+                speed_factor,
+                use_gpu=self.config.gpu_acceleration,
+                hwaccel=self.config.hwaccel
+            )
 
             self.logger.debug(
                 f"Retimed video: {video_path.name} → {retimed_path.name} "
@@ -367,7 +381,12 @@ class VideoProcessingAgent:
     ) -> Path:
         """Simple concatenation without transitions"""
         video_paths = [seg.video_path for seg in segments]
-        return concatenate_videos(video_paths, output_path)
+        return concatenate_videos(
+            video_paths,
+            output_path,
+            use_gpu=self.config.gpu_acceleration,
+            hwaccel=self.config.hwaccel
+        )
 
     def _concatenate_with_transitions(
         self,

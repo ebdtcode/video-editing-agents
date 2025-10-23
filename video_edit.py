@@ -52,8 +52,26 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Process video with default settings
+  # Process video with default settings (GPU-accelerated, parallel TTS, subtitles, chapters)
   python video_edit.py --video input.mp4 --output final.mp4
+
+  # Disable GPU acceleration (use CPU only)
+  python video_edit.py --video input.mp4 --output final.mp4 --no-gpu
+
+  # Disable parallel TTS processing (use sequential for troubleshooting)
+  python video_edit.py --video input.mp4 --output final.mp4 --no-parallel-tts
+
+  # Maximum performance: GPU + 3 parallel TTS workers
+  python video_edit.py --video input.mp4 --output final.mp4 --tts-workers 3
+
+  # Process with burned-in subtitles instead of soft subtitles
+  python video_edit.py --video input.mp4 --output final.mp4 --burn-subtitles
+
+  # Process without subtitles or chapters
+  python video_edit.py --video input.mp4 --output final.mp4 --no-subtitles --no-chapters
+
+  # Use time-interval chapter strategy (chapters every 60 seconds)
+  python video_edit.py --video input.mp4 --output final.mp4 --chapter-strategy time_interval --chapter-interval 60
 
   # Use existing transcription
   python video_edit.py --video input.mp4 --transcription transcript.json --output final.mp4
@@ -153,6 +171,64 @@ Examples:
         help='Disable transition effects between segments'
     )
 
+    parser.add_argument(
+        '--no-gpu',
+        action='store_true',
+        help='Disable GPU acceleration for video encoding (use CPU only)'
+    )
+
+    parser.add_argument(
+        '--hwaccel',
+        choices=['auto', 'cuda', 'none'],
+        default='auto',
+        help='Hardware acceleration mode (default: auto)'
+    )
+
+    # TTS parallelization options
+    parser.add_argument(
+        '--no-parallel-tts',
+        action='store_true',
+        help='Disable parallel TTS processing (use sequential)'
+    )
+
+    parser.add_argument(
+        '--tts-workers',
+        type=int,
+        help='Number of parallel TTS workers (default: auto, typically 2-3)'
+    )
+
+    # Subtitle options
+    parser.add_argument(
+        '--no-subtitles',
+        action='store_true',
+        help='Disable subtitle generation'
+    )
+
+    parser.add_argument(
+        '--burn-subtitles',
+        action='store_true',
+        help='Burn subtitles into video (default: soft subtitles)'
+    )
+
+    # Chapter options
+    parser.add_argument(
+        '--no-chapters',
+        action='store_true',
+        help='Disable chapter generation'
+    )
+
+    parser.add_argument(
+        '--chapter-strategy',
+        choices=['auto', 'segment', 'time_interval'],
+        help='Chapter generation strategy (default: auto)'
+    )
+
+    parser.add_argument(
+        '--chapter-interval',
+        type=float,
+        help='Time interval for chapters in seconds (for time_interval strategy)'
+    )
+
     # Logging
     parser.add_argument(
         '--log-level',
@@ -227,6 +303,37 @@ Examples:
 
         if args.no_transitions:
             config.video.transitions.enabled = False
+
+        # GPU options
+        if args.no_gpu:
+            config.video.gpu_acceleration = False
+
+        if args.hwaccel:
+            config.video.hwaccel = args.hwaccel
+
+        # TTS parallelization options
+        if args.no_parallel_tts:
+            config.parallel_tts = False
+
+        if args.tts_workers:
+            config.tts_workers = args.tts_workers
+
+        # Subtitle options
+        if args.no_subtitles:
+            config.output.subtitles.enabled = False
+
+        if args.burn_subtitles:
+            config.output.subtitles.burn_in = True
+
+        # Chapter options
+        if args.no_chapters:
+            config.output.chapters.enabled = False
+
+        if args.chapter_strategy:
+            config.output.chapters.strategy = args.chapter_strategy
+
+        if args.chapter_interval:
+            config.output.chapters.time_interval = args.chapter_interval
 
         # Set logging level
         if args.verbose:

@@ -85,7 +85,30 @@ class VideoConfig:
     quality: str = "high"
     codec: str = "h264"
     bitrate: str = "5M"
+    gpu_acceleration: bool = True  # Use GPU encoding (NVENC) if available
+    hwaccel: str = "auto"  # 'auto', 'cuda', 'none'
     transitions: TransitionConfig = field(default_factory=TransitionConfig)
+
+
+@dataclass
+class SubtitleConfig:
+    """Configuration for subtitle generation"""
+    enabled: bool = True
+    burn_in: bool = False  # If True, burn subtitles into video; if False, add as soft subtitle track
+    font_size: int = 24
+    font_color: str = "white"
+    outline_color: str = "black"
+    position: str = "bottom"  # 'bottom', 'top'
+
+
+@dataclass
+class ChapterConfig:
+    """Configuration for chapter generation"""
+    enabled: bool = True
+    min_chapter_duration: float = 30.0  # Minimum duration for a chapter in seconds
+    max_chapters: int = 100  # Maximum number of chapters
+    strategy: str = "auto"  # 'auto', 'segment', 'time_interval'
+    time_interval: float = 60.0  # Time interval for chapters when strategy='time_interval'
 
 
 @dataclass
@@ -95,6 +118,8 @@ class OutputConfig:
     temp_dir: str = "./temp_segments"
     keep_intermediates: bool = False
     checkpoint: bool = True
+    subtitles: SubtitleConfig = field(default_factory=SubtitleConfig)
+    chapters: ChapterConfig = field(default_factory=ChapterConfig)
 
 
 @dataclass
@@ -122,7 +147,9 @@ class ProcessingConfig:
     """Main configuration class"""
     min_segment_duration: float = 0.5
     max_segment_duration: float = 30.0
-    max_workers: int = 0  # 0 = auto
+    max_workers: int = 0  # 0 = auto (for video processing)
+    tts_workers: int = 0  # 0 = auto (for TTS generation, default 2-3)
+    parallel_tts: bool = True  # Enable parallel TTS processing
 
     fillers: FillerConfig = field(default_factory=FillerConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
@@ -136,20 +163,34 @@ class ProcessingConfig:
         """Validate and adjust configuration after initialization"""
         # Auto-calculate optimal workers if set to 0
         if self.max_workers == 0:
-            self.max_workers = self._calculate_optimal_workers()
+            self.max_workers = self._calculate_optimal_video_workers()
+
+        if self.tts_workers == 0:
+            self.tts_workers = self._calculate_optimal_tts_workers()
 
         # Validate configuration
         self._validate()
 
-    def _calculate_optimal_workers(self) -> int:
-        """Calculate optimal number of workers based on system resources"""
+    def _calculate_optimal_video_workers(self) -> int:
+        """Calculate optimal number of workers for video processing"""
         cpu_count = psutil.cpu_count(logical=False) or 4
         available_memory = psutil.virtual_memory().available
 
-        # Reserve 2GB per worker for TTS model
-        memory_workers = max(1, available_memory // (2 * 1024**3))
+        # Reserve 1GB per worker for video processing
+        memory_workers = max(1, available_memory // (1 * 1024**3))
 
         return min(cpu_count, memory_workers, 8)
+
+    def _calculate_optimal_tts_workers(self) -> int:
+        """Calculate optimal number of workers for TTS generation"""
+        cpu_count = psutil.cpu_count(logical=False) or 4
+        available_memory = psutil.virtual_memory().available
+
+        # Reserve 3GB per TTS worker (TTS models are memory-intensive)
+        memory_workers = max(1, available_memory // (3 * 1024**3))
+
+        # Conservative: use 2-3 workers for TTS to avoid OOM
+        return min(cpu_count // 2, memory_workers, 3)
 
     def _validate(self):
         """Validate configuration values"""
@@ -181,6 +222,8 @@ class ProcessingConfig:
                 'min_segment_duration': data.get('processing', {}).get('min_segment_duration', 0.5),
                 'max_segment_duration': data.get('processing', {}).get('max_segment_duration', 30.0),
                 'max_workers': data.get('processing', {}).get('max_workers', 0),
+                'tts_workers': data.get('processing', {}).get('tts_workers', 0),
+                'parallel_tts': data.get('processing', {}).get('parallel_tts', True),
                 'fillers': FillerConfig(**data.get('fillers', {})),
                 'transcription': TranscriptionConfig(**data.get('transcription', {})),
                 'tts': TTSConfig(**data.get('tts', {})),
@@ -188,7 +231,11 @@ class ProcessingConfig:
                     **{k: v for k, v in data.get('video', {}).items() if k != 'transitions'},
                     transitions=TransitionConfig(**data.get('video', {}).get('transitions', {}))
                 ),
-                'output': OutputConfig(**data.get('output', {})),
+                'output': OutputConfig(
+                    **{k: v for k, v in data.get('output', {}).items() if k not in ['subtitles', 'chapters']},
+                    subtitles=SubtitleConfig(**data.get('output', {}).get('subtitles', {})),
+                    chapters=ChapterConfig(**data.get('output', {}).get('chapters', {}))
+                ),
                 'logging': LoggingConfig(**data.get('logging', {})),
                 'youtube_seo': YouTubeSEOConfig(**data.get('youtube_seo', {}))
             }

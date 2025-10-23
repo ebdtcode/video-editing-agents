@@ -23,6 +23,12 @@ from src.utils.validators import (
     validate_json_file,
     validate_output_path
 )
+from src.utils.ffmpeg_utils import (
+    add_subtitles_to_video,
+    add_chapters_to_video,
+    generate_chapter_metadata,
+    get_video_duration
+)
 
 
 @dataclass
@@ -262,6 +268,12 @@ class OrchestratorAgent:
         transcript_path = work_dir / "cleaned_transcript.txt"
         self.content_agent.export_cleaned_transcript(clean_segments, transcript_path)
 
+        # Export subtitles if enabled
+        if self.config.output.subtitles.enabled:
+            self.logger.info("Generating subtitle file...")
+            subtitle_path = work_dir / "subtitles.srt"
+            self._generate_subtitles(segments, subtitle_path)
+
         return clean_segments, filler_stats
 
     def _stage_tts_generation(
@@ -322,12 +334,20 @@ class OrchestratorAgent:
         tts_audio_map = {}
         failed_segments = []
 
+        # Determine executor type and worker count
+        if self.config.parallel_tts:
+            # Use ProcessPoolExecutor for parallel TTS (each process has isolated memory)
+            executor_class = concurrent.futures.ProcessPoolExecutor
+            max_workers = self.config.tts_workers
+            self.logger.info(f"Using parallel TTS processing with {max_workers} workers")
+        else:
+            # Use ThreadPoolExecutor with max_workers=1 for sequential processing
+            executor_class = concurrent.futures.ThreadPoolExecutor
+            max_workers = 1
+            self.logger.info("Using sequential TTS processing (parallel_tts=False)")
+
         with tqdm(total=len(segments), desc="Generating TTS") as pbar:
-            # CRITICAL: TTS must be sequential - Chatterbox is not thread-safe
-            # Parallel execution causes race conditions and None returns
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=1  # Force sequential processing for TTS
-            ) as executor:
+            with executor_class(max_workers=max_workers) as executor:
                 future_to_segment = {}
 
                 for segment in segments:
@@ -467,10 +487,53 @@ class OrchestratorAgent:
         self.logger.info("Concatenating video segments...")
 
         # Concatenate all segments
+        temp_video = work_dir / f"temp_{output_path.name}"
         final_video = self.video_agent.concatenate_segments(
             segments,
-            output_path
+            temp_video
         )
+
+        # Add subtitles if enabled
+        if self.config.output.subtitles.enabled:
+            subtitle_path = work_dir / "subtitles.srt"
+            if subtitle_path.exists():
+                self.logger.info("Embedding subtitles into video...")
+                video_with_subs = work_dir / f"with_subs_{output_path.name}"
+                add_subtitles_to_video(
+                    final_video,
+                    subtitle_path,
+                    video_with_subs,
+                    burn_in=self.config.output.subtitles.burn_in,
+                    font_size=self.config.output.subtitles.font_size,
+                    font_color=self.config.output.subtitles.font_color,
+                    outline_color=self.config.output.subtitles.outline_color,
+                    position=self.config.output.subtitles.position
+                )
+                final_video = video_with_subs
+
+        # Add chapters if enabled
+        if self.config.output.chapters.enabled:
+            self.logger.info("Generating and embedding chapters...")
+            chapters = self._generate_chapters(segments, final_video)
+            if chapters:
+                chapter_file = work_dir / "chapters.txt"
+                generate_chapter_metadata(chapters, chapter_file)
+
+                video_with_chapters = output_path
+                add_chapters_to_video(final_video, chapter_file, video_with_chapters)
+                final_video = video_with_chapters
+            else:
+                # If no chapters to add but subtitles were added, move to output
+                if final_video != output_path:
+                    import shutil
+                    shutil.move(str(final_video), str(output_path))
+                    final_video = output_path
+        else:
+            # If chapters not enabled but subtitles were added, move to output
+            if final_video != output_path:
+                import shutil
+                shutil.move(str(final_video), str(output_path))
+                final_video = output_path
 
         self.logger.info(f"Final video created: {final_video}")
         return final_video
@@ -495,6 +558,121 @@ class OrchestratorAgent:
 
         except Exception as e:
             self.logger.warning(f"Cleanup failed: {e}")
+
+    def _generate_subtitles(self, segments: List[Segment], output_path: Path) -> Path:
+        """
+        Generate subtitle file from segments
+
+        Args:
+            segments: List of transcription segments
+            output_path: Path to output SRT file
+
+        Returns:
+            Path to generated subtitle file
+        """
+        return self.transcription_agent.export_to_srt(segments, output_path)
+
+    def _generate_chapters(
+        self,
+        segments: List[ProcessedSegment],
+        video_path: Path
+    ) -> List[Dict[str, any]]:
+        """
+        Generate chapter markers from processed segments
+
+        Args:
+            segments: List of processed video segments
+            video_path: Path to video file (for duration)
+
+        Returns:
+            List of chapter dictionaries with 'title', 'start', 'end'
+        """
+        config = self.config.output.chapters
+        chapters = []
+
+        try:
+            video_duration = get_video_duration(video_path)
+        except Exception as e:
+            self.logger.warning(f"Failed to get video duration for chapters: {e}")
+            return []
+
+        if config.strategy == "segment":
+            # Create one chapter per segment
+            current_time = 0.0
+            for i, segment in enumerate(segments, 1):
+                seg_duration = segment.tts_duration
+                chapters.append({
+                    'title': f"Segment {i}",
+                    'start': current_time,
+                    'end': min(current_time + seg_duration, video_duration)
+                })
+                current_time += seg_duration
+
+        elif config.strategy == "time_interval":
+            # Create chapters at fixed time intervals
+            current_time = 0.0
+            chapter_num = 1
+            while current_time < video_duration:
+                end_time = min(current_time + config.time_interval, video_duration)
+                chapters.append({
+                    'title': f"Chapter {chapter_num}",
+                    'start': current_time,
+                    'end': end_time
+                })
+                current_time = end_time
+                chapter_num += 1
+
+        else:  # auto strategy
+            # Intelligently group segments into chapters based on duration
+            current_chapter_start = 0.0
+            current_chapter_duration = 0.0
+            chapter_num = 1
+            segment_idx = 0
+
+            while segment_idx < len(segments):
+                segment = segments[segment_idx]
+                seg_duration = segment.tts_duration
+
+                # Check if adding this segment would exceed max chapter duration
+                if (current_chapter_duration > 0 and
+                    current_chapter_duration + seg_duration > config.min_chapter_duration * 2):
+                    # Create chapter from accumulated segments
+                    chapters.append({
+                        'title': f"Chapter {chapter_num}",
+                        'start': current_chapter_start,
+                        'end': current_chapter_start + current_chapter_duration
+                    })
+                    chapter_num += 1
+                    current_chapter_start += current_chapter_duration
+                    current_chapter_duration = 0.0
+                else:
+                    # Add segment to current chapter
+                    current_chapter_duration += seg_duration
+                    segment_idx += 1
+
+            # Add final chapter if there's remaining content
+            if current_chapter_duration > 0:
+                chapters.append({
+                    'title': f"Chapter {chapter_num}",
+                    'start': current_chapter_start,
+                    'end': min(current_chapter_start + current_chapter_duration, video_duration)
+                })
+
+        # Filter out chapters that are too short
+        chapters = [
+            ch for ch in chapters
+            if (ch['end'] - ch['start']) >= config.min_chapter_duration
+        ]
+
+        # Limit number of chapters
+        if len(chapters) > config.max_chapters:
+            self.logger.warning(
+                f"Generated {len(chapters)} chapters, limiting to {config.max_chapters}"
+            )
+            chapters = chapters[:config.max_chapters]
+
+        self.logger.info(f"Generated {len(chapters)} chapters")
+        return chapters
 
     def generate_report(self, result: ProcessingResult, output_path: Path) -> Path:
         """
