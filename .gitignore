@@ -58,6 +58,10 @@ temp/
 # Transcription files
 transcriptions/
 
+# Correction files
+*_corrections.json
+lingup_corrections.json
+
 # Checkpoint files
 checkpoints/
 
