@@ -105,6 +105,19 @@ class LoggingConfig:
 
 
 @dataclass
+class YouTubeSEOConfig:
+    """Configuration for YouTube SEO generation"""
+    enabled: bool = True
+    title_max_length: int = 100
+    description_min_length: int = 200
+    description_max_length: int = 5000
+    max_tags: int = 30
+    include_keywords: bool = True
+    include_timestamps: bool = True
+    tone: str = "engaging"  # 'professional', 'engaging', 'casual'
+
+
+@dataclass
 class ProcessingConfig:
     """Main configuration class"""
     min_segment_duration: float = 0.5
@@ -117,6 +130,7 @@ class ProcessingConfig:
     video: VideoConfig = field(default_factory=VideoConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    youtube_seo: YouTubeSEOConfig = field(default_factory=YouTubeSEOConfig)
 
     def __post_init__(self):
         """Validate and adjust configuration after initialization"""
@@ -175,7 +189,8 @@ class ProcessingConfig:
                     transitions=TransitionConfig(**data.get('video', {}).get('transitions', {}))
                 ),
                 'output': OutputConfig(**data.get('output', {})),
-                'logging': LoggingConfig(**data.get('logging', {}))
+                'logging': LoggingConfig(**data.get('logging', {})),
+                'youtube_seo': YouTubeSEOConfig(**data.get('youtube_seo', {}))
             }
 
             return cls(**config_dict)
@@ -200,7 +215,8 @@ class ProcessingConfig:
             'tts': config_dict['tts'],
             'video': config_dict['video'],
             'output': config_dict['output'],
-            'logging': config_dict['logging']
+            'logging': config_dict['logging'],
+            'youtube_seo': config_dict['youtube_seo']
         }
 
         with open(path, 'w') as f:
