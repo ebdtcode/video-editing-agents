@@ -1,0 +1,277 @@
+{
+  "metadata": {
+    "exported_at": "2025-10-23T14:37:07.902276",
+    "source": "temp_segments/cleaned_transcript.txt",
+    "total_segments": 26,
+    "total_duration": 281.03,
+    "instructions": {
+      "1": "Edit the 'corrected_text' field to fix transcription errors",
+      "2": "Set 'skip' to true to exclude a segment from TTS generation",
+      "3": "Add notes to document why you made changes",
+      "4": "Do NOT modify segment_id, start_time, or end_time",
+      "5": "Save and run: python regenerate_from_corrections.py"
+    }
+  },
+  "segments": [
+    {
+      "segment_id": "seg_0000",
+      "start_time": 1.04,
+      "end_time": 12.16,
+      "duration": 11.12,
+      "original_text": "Hello everyone, welcome to the channel, where will you pay the app that I've done free for the day. Today we are reviewing the Study X Flask Card and Homework AI.",
+      "corrected_text": "Hello everyone, welcome to the channel, where we review paid apps that have gone free for the day. Today we are reviewing the StudX flashcard and homework AI app.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0001",
+      "start_time": 13.53,
+      "end_time": 42.54,
+      "duration": 29.01,
+      "original_text": "Here, you can see a few screenshots from the app. Best AI Math Health Helper. Pro use in the graph. will work helpful for any subject. Generate similar questions, step-by-step explanation, quiz challenges, photo math, level AI tutor, study x-flask hard, and.",
+      "corrected_text": "Here, you can see a few screenshots from the app: Best AI Math Health Helper, Homework helper for any subject. Generate similar questions, step-by-step explanation, quiz challenges, photo math, level AI tutor, study x-flask hard.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0002",
+      "start_time": 43.78,
+      "end_time": 62.62,
+      "duration": 18.84,
+      "original_text": "Let's scroll all the way to the bottom of the screen. We can see here The premium unlimited subscription is showing $34, but after we install, we should be able to use this app for free.",
+      "corrected_text": "Let's scroll all the way to the bottom of the screen. We can see here The premium and unlimited is showing the 34 dollars, but after we install, we should be able to use this app for free.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0003",
+      "start_time": 64.0,
+      "end_time": 67.56,
+      "duration": 3.56,
+      "original_text": "I will pause the video and install this app and then come.",
+      "corrected_text": "I will pause the video and install this app and then come right back.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0004",
+      "start_time": 67.9,
+      "end_time": 75.55,
+      "duration": 7.65,
+      "original_text": "Back after I finish installing it. Okay, install the app. Now let's test, let's open the app.",
+      "corrected_text": "I am back after I install it. Okay, I installed the app. Now let's test it, let's open the app.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0005",
+      "start_time": 77.64,
+      "end_time": 86.79,
+      "duration": 9.15,
+      "original_text": "We'll just, okay, it says today, the lifetime license is free for today.",
+      "corrected_text": "The app is now showing: Free Today, Unlock Lifetime Access, so we can activate it by pressing the Unlock Lifetime Free.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0006",
+      "start_time": 87.73,
+      "end_time": 93.56,
+      "duration": 5.83,
+      "original_text": "Let me pause and you just activate this by entering my Apple ID and then I'll be.",
+      "corrected_text": "Let me pause and just activate this app by entering my Apple ID and then I'll be back.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0007",
+      "start_time": 93.88,
+      "end_time": 99.34,
+      "duration": 5.46,
+      "original_text": "Okay, I did activate the app, it will ask you to sign in.",
+      "corrected_text": "Okay, I did activate the app, it did not ask for my Apple ID, but I had to sign in.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0008",
+      "start_time": 99.69,
+      "end_time": 100.61,
+      "duration": 0.92,
+      "original_text": "I did sign in, I'd.",
+      "corrected_text": "I did sign in to use the app.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0009",
+      "start_time": 101.03,
+      "end_time": 107.37,
+      "duration": 6.34,
+      "original_text": "To use it to sign in with Apple, which allows me to hide my email.",
+      "corrected_text": "I used Apple to sign into the app, since Apple allows me to hide my email.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0010",
+      "start_time": 108.15,
+      "end_time": 114.02,
+      "duration": 5.87,
+      "original_text": "Here, what subject do you need to help? Do you need help with? We have math science, English.",
+      "corrected_text": "We can see here, what subject do you need help with? We have math, science, English, History, programming.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0011",
+      "start_time": 114.78,
+      "end_time": 139.53,
+      "duration": 24.75,
+      "original_text": "Let's go. Okay, they're all actually just all selected. I want only programming and math. Okay, let's continue. And let's say college level. on let's see Max experience, yes I do have experience. Okay.",
+      "corrected_text": "All the options seemed selected. I want only programming and math. Okay, let's continue. And let's say college level. It is asking my experience level, I will say yes, I do have experience.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0012",
+      "start_time": 140.83,
+      "end_time": 147.16,
+      "duration": 6.33,
+      "original_text": "Here, we could take a picture of any problem and the app will help us, but I will continue.",
+      "corrected_text": "Here, we could take a picture of any problem and the app will help us, but I will continue since I don't have any homework at the moment.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0013",
+      "start_time": 147.92,
+      "end_time": 152.99,
+      "duration": 5.07,
+      "original_text": "Now, try it first, no skip. And.",
+      "corrected_text": "Now, it is suggesting to try it first, but I will skip.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0014",
+      "start_time": 153.79,
+      "end_time": 172.2,
+      "duration": 18.41,
+      "original_text": "Here, you have some feedback from some of the customers. We can just continue. Okay, we'll rate them for today. We'll just give them a five. And let's go.",
+      "corrected_text": "Here, you have feedback from some of their customers. We can just continue. Okay, we'll rate the app for today. We'll just give them five stars since we are getting the app for free today.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0015",
+      "start_time": 172.52,
+      "end_time": 175.79,
+      "duration": 3.27,
+      "original_text": "Back. So, okay, we did give them a five star.",
+      "corrected_text": "I am back after rating the app. Okay, we did give them a five star.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0016",
+      "start_time": 176.21,
+      "end_time": 180.51,
+      "duration": 4.3,
+      "original_text": "Let's proceed because they're giving us the apple free for the day. Okay.",
+      "corrected_text": "Let's proceed because they're giving us the app free today.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0017",
+      "start_time": 183.15,
+      "end_time": 201.79,
+      "duration": 18.64,
+      "original_text": "Let's continue. And for now, I will say don't allow, just proceed. Because I don't have any homework to scan. Okay.",
+      "corrected_text": "Let's continue. And for now, I will say don't allow, just proceed because I don't have any homework to scan.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0018",
+      "start_time": 201.97,
+      "end_time": 206.55,
+      "duration": 4.58,
+      "original_text": "If I go here in the settings, we see a few things.",
+      "corrected_text": "If I go here in the settings, we can see a few things.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0019",
+      "start_time": 207.89,
+      "end_time": 208.57,
+      "duration": 0.68,
+      "original_text": "Here really I.",
+      "corrected_text": "Here really I.",
+      "notes": "",
+      "skip": true
+    },
+    {
+      "segment_id": "seg_0020",
+      "start_time": 208.81,
+      "end_time": 232.39,
+      "duration": 23.58,
+      "original_text": "The dark mode. Okay, I said my experience level and I didn't give it permission. So. Yeah, I think I'm going to review this app in in-depth next time because I had to actually take a picture of a problem before the app can help me.",
+      "corrected_text": "I like the dark mode. Okay, I said my experience level and I didn't give it permission. So. Yeah, I think I'm going to review this app in in-depth next time because I had to actually take a picture of a problem before the app can help me.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0021",
+      "start_time": 232.65,
+      "end_time": 242.76,
+      "duration": 10.11,
+      "original_text": "Yesterday guys, it was just to actually show you, okay, you see, just he came back with some sample problems.",
+      "corrected_text": "I just wanted to show you guys how to get the app for free. Oh, nice the app came back with some sample problems.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0022",
+      "start_time": 244.04,
+      "end_time": 247.24,
+      "duration": 3.2,
+      "original_text": "Calculus area between curves, okay.",
+      "corrected_text": "We can see calculus area between curves, okay.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0023",
+      "start_time": 248.62,
+      "end_time": 259.2,
+      "duration": 10.58,
+      "original_text": "Very good. When you go back, see if I go back again, you see it takes me back to the camera, but I don't have any problem yet.",
+      "corrected_text": "Very good. When you go back, when I go back again, you see it takes me back to the camera, but I don't have any homework yet.",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0024",
+      "start_time": 259.98,
+      "end_time": 263.8,
+      "duration": 3.82,
+      "original_text": "If I open the historical view.",
+      "corrected_text": "When I open the report page for past questions,",
+      "notes": "",
+      "skip": false
+    },
+    {
+      "segment_id": "seg_0025",
+      "start_time": 264.54,
+      "end_time": 282.07,
+      "duration": 17.53,
+      "original_text": "It shows some of the question that we got health with. So, this is it. Thank you for watching. Don't forget to subscribe to this channel where we repaid app that have done free for the day. Until next video, see you.",
+      "corrected_text": "This page shows past questions we got help for. So, that's it for today, folks. Thank you for watching, don't forget to hit the subscribe button to this channel, where we review paid apps that have turned free for the day. See you in the next video.",
+      "notes": "",
+      "skip": false
+    }
+  ]
+}

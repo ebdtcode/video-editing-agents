@@ -9,9 +9,10 @@ from datetime import datetime
 import concurrent.futures
 from tqdm import tqdm
 
-from src.config import ProcessingConfig
+from src.config import ProcessingConfig, TTSConfig
 from src.agents.transcription_agent import TranscriptionAgent, Segment
 from src.agents.content_analysis_agent import ContentAnalysisAgent, CleanSegment
+from src.agents.content_correction_agent import ContentCorrectionAgent
 from src.agents.tts_generation_agent import TTSGenerationAgent
 from src.agents.video_processing_agent import VideoProcessingAgent, ProcessedSegment
 from src.exceptions import VideoProcessingError
@@ -29,6 +30,44 @@ from src.utils.ffmpeg_utils import (
     generate_chapter_metadata,
     get_video_duration
 )
+
+
+def _generate_tts_for_segment_worker(
+    segment: CleanSegment,
+    output_dir: Path,
+    reference_audio: Optional[Path],
+    tts_config: TTSConfig
+) -> Path:
+    """
+    Worker function for parallel TTS generation
+
+    This is a module-level function to avoid pickling issues with ProcessPoolExecutor.
+    Each worker process creates its own TTS agent instance.
+
+    Args:
+        segment: Clean segment to generate audio for
+        output_dir: Output directory for audio files
+        reference_audio: Optional reference audio for voice cloning
+        tts_config: TTS configuration
+
+    Returns:
+        Path to generated audio file
+
+    Raises:
+        TTSGenerationError: If generation fails
+    """
+    # Import here to avoid circular imports and allow per-process initialization
+    from src.agents.tts_generation_agent import TTSGenerationAgent
+
+    # Create a fresh TTS agent instance for this worker
+    tts_agent = TTSGenerationAgent(tts_config)
+
+    # Generate TTS for the segment
+    return tts_agent.generate_for_segment(
+        segment,
+        output_dir,
+        reference_audio
+    )
 
 
 @dataclass
@@ -64,6 +103,7 @@ class OrchestratorAgent:
         # Initialize all agents
         self.transcription_agent = TranscriptionAgent(config.transcription)
         self.content_agent = ContentAnalysisAgent(config)
+        self.correction_agent = ContentCorrectionAgent(config.content_correction)
         self.tts_agent = TTSGenerationAgent(config.tts)
         self.video_agent = VideoProcessingAgent(config.video)
 
@@ -80,7 +120,8 @@ class OrchestratorAgent:
         output_path: Path,
         transcription_json: Optional[Path] = None,
         overwrite: bool = False,
-        resume: bool = False
+        resume: bool = False,
+        from_corrected_transcript: Optional[Path] = None
     ) -> ProcessingResult:
         """
         Process video through complete pipeline
@@ -91,6 +132,7 @@ class OrchestratorAgent:
             transcription_json: Optional pre-existing transcription JSON
             overwrite: Whether to overwrite existing output
             resume: Whether to resume from checkpoint
+            from_corrected_transcript: Optional edited transcript file to resume from TTS stage
 
         Returns:
             ProcessingResult with pipeline results
@@ -130,39 +172,63 @@ class OrchestratorAgent:
                     f"{progress['completed']}/{progress['total']} segments completed"
                 )
 
-            # Stage 1: Transcription
-            self.logger.info("\n[Stage 1/5] Transcription")
-            segments = self._stage_transcription(
-                video_path,
-                work_dir,
-                transcription_json
-            )
+            # Check if resuming from edited transcript
+            if from_corrected_transcript:
+                self.logger.info(
+                    f"\n*** EDIT AND RESUME MODE ***\n"
+                    f"Loading edited transcript: {from_corrected_transcript}\n"
+                    f"Skipping stages 1-3 (Transcription, Filler Removal, Correction)\n"
+                    f"Starting from Stage 4 (TTS Generation)\n"
+                )
 
-            # Stage 2: Content Analysis
-            self.logger.info("\n[Stage 2/5] Content Analysis")
-            clean_segments, filler_stats = self._stage_content_analysis(segments, work_dir)
+                # Load edited transcript and map to segments
+                corrected_segments = self._load_edited_transcript(
+                    from_corrected_transcript,
+                    work_dir
+                )
 
-            # Stage 3: TTS Generation
-            self.logger.info("\n[Stage 3/5] TTS Generation")
+                # Set filler stats to N/A since we're skipping that stage
+                filler_stats = {'removed': 0, 'removal_rate': 0.0}
+
+            else:
+                # Normal pipeline: Run stages 1-3
+                # Stage 1: Transcription
+                self.logger.info("\n[Stage 1/6] Transcription")
+                segments = self._stage_transcription(
+                    video_path,
+                    work_dir,
+                    transcription_json
+                )
+
+                # Stage 2: Content Analysis
+                self.logger.info("\n[Stage 2/6] Content Analysis (Filler Removal)")
+                clean_segments, filler_stats = self._stage_content_analysis(segments, work_dir)
+
+                # Stage 3: Content Correction
+                self.logger.info("\n[Stage 3/6] Content Correction (Grammar & Clarity)")
+                corrected_segments = self._stage_content_correction(clean_segments, work_dir)
+
+            # Stage 4: TTS Generation
+            self.logger.info("\n[Stage 4/6] TTS Generation")
             tts_audio_map = self._stage_tts_generation(
-                clean_segments,
+                corrected_segments,
                 work_dir,
                 video_path,
                 resume
             )
 
-            # Stage 4: Video Processing
-            self.logger.info("\n[Stage 4/5] Video Processing")
+            # Stage 5: Video Processing
+            self.logger.info("\n[Stage 5/6] Video Processing")
             processed_segments = self._stage_video_processing(
                 video_path,
-                clean_segments,
+                corrected_segments,
                 tts_audio_map,
                 work_dir,
                 resume
             )
 
-            # Stage 5: Final Assembly
-            self.logger.info("\n[Stage 5/5] Final Assembly")
+            # Stage 6: Final Assembly
+            self.logger.info("\n[Stage 6/6] Final Assembly")
             final_video = self._stage_final_assembly(
                 processed_segments,
                 output_path,
@@ -276,6 +342,52 @@ class OrchestratorAgent:
 
         return clean_segments, filler_stats
 
+    def _stage_content_correction(
+        self,
+        segments: List[CleanSegment],
+        work_dir: Path
+    ) -> List[CleanSegment]:
+        """Stage 3: Content Correction with LLM"""
+        if not self.config.content_correction.enabled:
+            self.logger.info("Content correction disabled, skipping")
+            return segments
+
+        # Store original segments for reporting
+        original_segments = segments.copy()
+
+        # Correct segments using LLM
+        corrected_segments = self.correction_agent.correct_segments(segments)
+
+        # Log correction summary
+        changes_count = sum(
+            1 for orig, corr in zip(original_segments, corrected_segments)
+            if orig.text != corr.text
+        )
+        self.logger.info(
+            f"Corrected {changes_count}/{len(segments)} segments using "
+            f"{self.config.content_correction.mode}"
+        )
+
+        # Export corrected transcript
+        corrected_path = work_dir / "corrected_transcript.txt"
+        self.content_agent.export_cleaned_transcript(corrected_segments, corrected_path)
+
+        # Save segment metadata for edit and resume feature
+        metadata_path = work_dir / "segment_metadata.json"
+        self._save_segment_metadata(corrected_segments, metadata_path)
+
+        # Generate correction report if corrections were made
+        if changes_count > 0:
+            report_path = work_dir / "correction_report.txt"
+            self.correction_agent.generate_correction_report(
+                original_segments,
+                corrected_segments,
+                report_path
+            )
+            self.logger.info(f"Correction report saved: {report_path}")
+
+        return corrected_segments
+
     def _stage_tts_generation(
         self,
         segments: List[CleanSegment],
@@ -283,7 +395,7 @@ class OrchestratorAgent:
         video_path: Path,
         resume: bool
     ) -> Dict[str, Path]:
-        """Stage 3: TTS Generation"""
+        """Stage 4: TTS Generation"""
         tts_dir = work_dir / "tts_audio"
         tts_dir.mkdir(exist_ok=True)
 
@@ -340,11 +452,16 @@ class OrchestratorAgent:
             executor_class = concurrent.futures.ProcessPoolExecutor
             max_workers = self.config.tts_workers
             self.logger.info(f"Using parallel TTS processing with {max_workers} workers")
+            self.logger.warning(
+                "Parallel TTS with GPU may cause memory contention. "
+                "Consider setting parallel_tts: false in config for GPU processing."
+            )
         else:
             # Use ThreadPoolExecutor with max_workers=1 for sequential processing
+            # This is the recommended mode for GPU to avoid model loading conflicts
             executor_class = concurrent.futures.ThreadPoolExecutor
             max_workers = 1
-            self.logger.info("Using sequential TTS processing (parallel_tts=False)")
+            self.logger.info("Using sequential TTS processing (recommended for GPU)")
 
         with tqdm(total=len(segments), desc="Generating TTS") as pbar:
             with executor_class(max_workers=max_workers) as executor:
@@ -361,12 +478,23 @@ class OrchestratorAgent:
                         continue
 
                     # Submit job
-                    future = executor.submit(
-                        self._generate_tts_for_segment,
-                        segment,
-                        tts_dir,
-                        reference_audio
-                    )
+                    if self.config.parallel_tts:
+                        # Use module-level function for parallel processing
+                        future = executor.submit(
+                            _generate_tts_for_segment_worker,
+                            segment,
+                            tts_dir,
+                            reference_audio,
+                            self.config.tts
+                        )
+                    else:
+                        # Use instance method for sequential processing
+                        future = executor.submit(
+                            self._generate_tts_for_segment,
+                            segment,
+                            tts_dir,
+                            reference_audio
+                        )
                     future_to_segment[future] = segment
 
                 # Collect results
@@ -413,7 +541,7 @@ class OrchestratorAgent:
         work_dir: Path,
         resume: bool
     ) -> List[ProcessedSegment]:
-        """Stage 4: Video Processing"""
+        """Stage 5: Video Processing"""
         video_dir = work_dir / "video_segments"
         video_dir.mkdir(exist_ok=True)
 
@@ -483,7 +611,7 @@ class OrchestratorAgent:
         output_path: Path,
         work_dir: Path
     ) -> Path:
-        """Stage 5: Final Assembly"""
+        """Stage 6: Final Assembly"""
         self.logger.info("Concatenating video segments...")
 
         # Concatenate all segments

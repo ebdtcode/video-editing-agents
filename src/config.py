@@ -15,8 +15,30 @@ from src.exceptions import ConfigurationError
 class FillerConfig:
     """Configuration for filler word detection"""
     mode: str = "rule-based"  # 'rule-based' or 'ml'
-    words: List[str] = field(default_factory=lambda: ["uh", "um", "ah", "like", "you know"])
+    words: List[str] = field(default_factory=lambda: [
+        "uh", "um", "ah", "like", "you know",
+        "ok", "okay", "so", "well", "right",
+        "i mean", "you see", "actually", "basically",
+        "literally", "sort of", "kind of"
+    ])
     confidence_threshold: float = 0.8
+
+
+@dataclass
+class ContentCorrectionConfig:
+    """Configuration for LLM-based content correction"""
+    enabled: bool = True
+    mode: str = "openai"  # 'openai', 'anthropic', 'ollama'
+    model: str = "gpt-4o-mini"  # Model to use for corrections
+    api_key: Optional[str] = None  # API key or Ollama host (e.g., http://localhost:11434)
+    max_tokens: int = 500
+    temperature: float = 0.3
+
+    # Correction features
+    fix_grammar: bool = True
+    rephrase_awkward: bool = True
+    remove_repetitions: bool = True
+    improve_clarity: bool = True
 
 
 @dataclass
@@ -74,7 +96,10 @@ class TTSConfig:
 class TransitionConfig:
     """Configuration for video transitions"""
     enabled: bool = True
-    type: str = "crossfade"  # 'crossfade', 'dissolve', 'none'
+    # Valid xfade transition types: fade, dissolve, wipeleft, wiperight, wipeup, wipedown,
+    # slideleft, slideright, slideup, slidedown, none
+    # Note: 'crossfade' is mapped to 'fade' for backward compatibility
+    type: str = "fade"  # Default to 'fade' (smooth crossfade effect)
     duration: float = 0.3
 
 
@@ -152,6 +177,7 @@ class ProcessingConfig:
     parallel_tts: bool = True  # Enable parallel TTS processing
 
     fillers: FillerConfig = field(default_factory=FillerConfig)
+    content_correction: ContentCorrectionConfig = field(default_factory=ContentCorrectionConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     video: VideoConfig = field(default_factory=VideoConfig)

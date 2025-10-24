@@ -53,6 +53,7 @@ class ChatterboxBackend(TTSBackend):
             # Import chatterbox dynamically
             from chatterbox.tts import ChatterboxTTS
             import warnings
+            import torch
 
             # Suppress transformers attention warnings from Chatterbox internals
             with warnings.catch_warnings():
@@ -61,7 +62,17 @@ class ChatterboxBackend(TTSBackend):
                 # Detect device
                 device = self._detect_device()
 
+                # For CUDA, verify it's actually available before initializing model
+                if device == "cuda":
+                    if not torch.cuda.is_available():
+                        self.logger.warning("CUDA requested but not available, falling back to CPU")
+                        device = "cpu"
+                    else:
+                        self.logger.info(f"CUDA available: {torch.cuda.get_device_name(0)}")
+                        self.logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+
                 # Use from_pretrained factory method (actual Chatterbox API)
+                self.logger.info(f"Loading Chatterbox TTS model on {device}...")
                 self.tts = ChatterboxTTS.from_pretrained(device=device)
                 self.logger.info(f"Initialized Chatterbox TTS on {device}")
 
@@ -73,7 +84,9 @@ class ChatterboxBackend(TTSBackend):
             raise TTSGenerationError(f"Failed to initialize Chatterbox TTS: {e}")
 
     def _detect_device(self) -> str:
-        """Detect CUDA availability"""
+        """Detect CUDA availability and handle multi-process GPU access"""
+        import os
+
         if self.config.device == "cpu":
             return "cpu"
 
@@ -86,6 +99,11 @@ class ChatterboxBackend(TTSBackend):
         )
 
         if result.returncode == 0:
+            # Enable CUDA device management for multi-process scenarios
+            # This helps prevent GPU initialization hangs
+            os.environ.setdefault('CUDA_LAUNCH_BLOCKING', '0')
+            os.environ.setdefault('CUDA_VISIBLE_DEVICES', '0')
+
             self.logger.info("CUDA detected, using GPU")
             return "cuda"
         else:

@@ -1,0 +1,101 @@
+# FREE Configuration with Ollama (Local LLM)
+# ==============================================
+# No API costs! Runs completely local and offline.
+
+# Processing settings
+processing:
+  min_segment_duration: 0.5
+  max_segment_duration: 30.0
+  max_workers: 4
+  tts_workers: 3
+  parallel_tts: true
+
+# Filler word detection (EXPANDED)
+fillers:
+  mode: "rule-based"
+  words:
+    - "uh"
+    - "um"
+    - "ah"
+    - "like"
+    - "you know"
+    - "ok"
+    - "okay"
+    - "so"
+    - "well"
+    - "right"
+    - "i mean"
+    - "you see"
+    - "actually"
+    - "basically"
+    - "literally"
+    - "sort of"
+    - "kind of"
+
+# Content correction with LOCAL LLM (FREE!)
+content_correction:
+  enabled: true
+  mode: "ollama"  # Use local Ollama instead of paid APIs
+  model: "llama3.2:3b"  # Options: llama3.2:3b, llama3.1:8b, mistral:7b, phi3:mini
+  # api_key: "http://localhost:11434"  # Optional: custom Ollama host
+  max_tokens: 500
+  temperature: 0.3
+
+  # Correction features
+  fix_grammar: true
+  rephrase_awkward: true
+  remove_repetitions: true
+  improve_clarity: true
+
+# Transcription settings
+transcription:
+  backend: "whisperx"
+  model: "large-v2"
+  language: "auto"
+  device: "mps"  # Options: cuda, mps, cpu
+  compute_type: "float16"
+
+# TTS settings
+tts:
+  backend: "chatterbox"
+  voice_mode: "custom"
+  voice_reference: "voices/sample_voice_yt.wav"
+  sample_rate: 44100
+  normalize: true
+  device: "mps"
+
+# Video processing
+video:
+  sync_mode: "retime"
+  quality: "high"
+  codec: "h264"
+  bitrate: "5M"
+  gpu_acceleration: true
+  hwaccel: "auto"
+
+  transitions:
+    enabled: true
+    type: "crossfade"
+    duration: 0.3
+
+# Output settings
+output:
+  temp_dir: "temp_segments"
+  keep_intermediates: false
+
+  subtitles:
+    enabled: true
+    burn_in: false
+    font_size: 24
+    font_color: "white"
+    outline_color: "black"
+    position: "bottom"
+
+  chapters:
+    enabled: false
+
+# Logging
+logging:
+  level: "INFO"
+  file: "video_processing.log"
+  console: true

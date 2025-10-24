@@ -16,6 +16,7 @@ from src.utils.ffmpeg_utils import (
     merge_video_audio,
     retime_video,
     get_audio_duration,
+    get_video_duration,
     run_ffmpeg_safe
 )
 
@@ -404,58 +405,188 @@ class VideoProcessingAgent:
             Path to final video
         """
         try:
+            # Map common transition names to valid xfade transition types
+            transition_map = {
+                'crossfade': 'fade',      # Map crossfade to fade
+                'dissolve': 'dissolve',   # Dissolve is valid
+                'fade': 'fade',           # Fade is valid
+                'wipeleft': 'wipeleft',
+                'wiperight': 'wiperight',
+                'wipeup': 'wipeup',
+                'wipedown': 'wipedown',
+                'slideleft': 'slideleft',
+                'slideright': 'slideright',
+                'slideup': 'slideup',
+                'slidedown': 'slidedown',
+                'none': None              # Disable transitions
+            }
+
             transition_type = self.config.transitions.type
             duration = self.config.transitions.duration
 
+            # Map to valid xfade transition type
+            xfade_transition = transition_map.get(transition_type.lower())
+            if xfade_transition is None and transition_type.lower() != 'none':
+                self.logger.warning(
+                    f"Unknown transition type '{transition_type}', using 'fade' as fallback"
+                )
+                xfade_transition = 'fade'
+
+            # If transition is 'none', use simple concatenation
+            if xfade_transition is None:
+                self.logger.info("Transition type 'none', using simple concatenation")
+                return self._concatenate_simple(segments, output_path)
+
             self.logger.info(
-                f"Applying {transition_type} transitions "
-                f"({duration}s) between segments"
+                f"Applying '{xfade_transition}' transitions "
+                f"({duration}s) between {len(segments)} segments"
             )
 
+            # Calculate expected output duration
+            expected_duration = sum(seg.tts_duration for seg in segments) - (duration * (len(segments) - 1))
+            self.logger.debug(f"Expected output duration with transitions: {expected_duration:.2f}s")
+
             # Build complex filter for transitions
-            filter_parts = []
-            input_labels = []
+            video_filter_parts = []
+            audio_filter_parts = []
+            video_labels = []
+            audio_labels = []
 
-            # Create input labels
+            # Create input labels for video and audio
             for i in range(len(segments)):
-                input_labels.append(f"[{i}:v]")
+                video_labels.append(f"[{i}:v]")
+                audio_labels.append(f"[{i}:a]")
 
-            # Build xfade filters between consecutive segments
-            current_label = input_labels[0]
+            # Build xfade filters between consecutive video segments
+            current_video_label = video_labels[0]
 
             for i in range(len(segments) - 1):
-                next_label = input_labels[i + 1]
-                output_label = f"[v{i}]" if i < len(segments) - 2 else "[outv]"
+                next_video_label = video_labels[i + 1]
+                output_video_label = f"[v{i}]" if i < len(segments) - 2 else "[outv]"
 
-                # Calculate offset (cumulative duration minus transition)
+                # Calculate offset (cumulative duration minus transition overlap)
                 offset = sum(seg.tts_duration for seg in segments[:i+1]) - (duration * i)
 
-                filter_parts.append(
-                    f"{current_label}{next_label}xfade="
-                    f"transition={transition_type}:"
+                video_filter_parts.append(
+                    f"{current_video_label}{next_video_label}xfade="
+                    f"transition={xfade_transition}:"
                     f"duration={duration}:"
                     f"offset={offset:.2f}"
-                    f"{output_label}"
+                    f"{output_video_label}"
                 )
 
-                current_label = output_label
+                current_video_label = output_video_label
+
+            # Build audio filters to match video transition timing
+            # When video uses xfade with overlaps, audio must match those timings
+            # We'll trim and concat audio to match the final video duration
+
+            if len(segments) == 1:
+                # Single segment - just copy audio
+                audio_filter_parts.append(f"{audio_labels[0]}anull[outa]")
+            else:
+                # Multiple segments - need to handle transition overlaps
+                # Trim the end of each segment (except last) by transition duration
+                # Then concat without gaps
+                trimmed_audio_labels = []
+
+                for i, segment in enumerate(segments):
+                    if i < len(segments) - 1:
+                        # Not the last segment - trim the end by transition duration
+                        trimmed_label = f"[atrim{i}]"
+                        audio_filter_parts.append(
+                            f"{audio_labels[i]}atrim=0:{segment.tts_duration - duration},"
+                            f"asetpts=PTS-STARTPTS{trimmed_label}"
+                        )
+                        trimmed_audio_labels.append(trimmed_label)
+                    else:
+                        # Last segment - use full duration
+                        trimmed_label = f"[atrim{i}]"
+                        audio_filter_parts.append(
+                            f"{audio_labels[i]}asetpts=PTS-STARTPTS{trimmed_label}"
+                        )
+                        trimmed_audio_labels.append(trimmed_label)
+
+                # Concat all trimmed audio segments
+                audio_inputs = ''.join(trimmed_audio_labels)
+                audio_filter_parts.append(
+                    f"{audio_inputs}concat=n={len(segments)}:v=0:a=1[outa]"
+                )
 
             # Build FFmpeg command
             cmd = ['ffmpeg', '-y']
 
-            # Add all inputs
+            # Add all inputs (video files contain both video and audio)
             for segment in segments:
                 cmd.extend(['-i', str(segment.video_path)])
 
-            # Add filter complex
-            filter_complex = ';'.join(filter_parts)
-            cmd.extend([
+            # Combine video and audio filters
+            all_filters = video_filter_parts + audio_filter_parts
+            filter_complex = ';'.join(all_filters)
+
+            # Log the filter for debugging
+            self.logger.debug(f"Video filters: {';'.join(video_filter_parts)}")
+            self.logger.debug(f"Audio filters: {';'.join(audio_filter_parts)}")
+
+            # Build encoding parameters with universal compatibility
+            encoding_params = [
                 '-filter_complex', filter_complex,
-                '-map', '[outv]',
-                '-c:v', self.config.codec,
-                '-b:v', self.config.bitrate,
-                str(output_path)
+                '-map', '[outv]',  # Map video output
+                '-map', '[outa]',  # Map audio output
+            ]
+
+            # Parse bitrate for buffer size calculation
+            try:
+                bitrate_value = int(self.config.bitrate.rstrip('MmKk'))
+                if 'k' in self.config.bitrate.lower():
+                    bufsize = f"{bitrate_value * 2}k"
+                else:
+                    bufsize = f"{bitrate_value * 2}M"
+            except (ValueError, AttributeError):
+                bufsize = "10M"  # Safe default
+
+            # Video encoding with compatibility settings
+            if self.config.codec == 'h264_nvenc':
+                # NVENC with compatibility
+                encoding_params.extend([
+                    '-c:v', 'h264_nvenc',
+                    '-preset', 'p4',  # Medium quality preset
+                    '-profile:v', 'high',  # H.264 High profile
+                    '-level', '4.1',  # Compatible level
+                    '-pix_fmt', 'yuv420p',  # Universal pixel format
+                    '-b:v', self.config.bitrate,
+                    '-maxrate', self.config.bitrate,
+                    '-bufsize', bufsize
+                ])
+            else:
+                # CPU encoding (libx264) with compatibility
+                encoding_params.extend([
+                    '-c:v', 'libx264',
+                    '-preset', 'medium',
+                    '-profile:v', 'high',
+                    '-level', '4.1',
+                    '-pix_fmt', 'yuv420p',  # Universal pixel format
+                    '-crf', '23',
+                    '-maxrate', self.config.bitrate,
+                    '-bufsize', bufsize
+                ])
+
+            # Audio encoding with compatibility
+            encoding_params.extend([
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-ar', '48000',  # Standard sample rate
+                '-ac', '2',  # Stereo
+                '-movflags', '+faststart',  # Fast start for streaming
             ])
+
+            # Add output path
+            encoding_params.append(str(output_path))
+
+            cmd.extend(encoding_params)
+
+            # Log the full command for debugging
+            self.logger.debug(f"FFmpeg command: {' '.join(cmd[:10])}... (truncated)")
 
             run_ffmpeg_safe(
                 cmd,
@@ -464,7 +595,23 @@ class VideoProcessingAgent:
                 check=True
             )
 
-            self.logger.info(f"Created video with transitions: {output_path}")
+            # Validate output file
+            if output_path.exists():
+                output_duration = get_video_duration(output_path)
+                self.logger.info(
+                    f"Created video with transitions: {output_path} "
+                    f"(duration: {output_duration:.2f}s, expected: {expected_duration:.2f}s)"
+                )
+
+                # Warn if duration doesn't match expected
+                if abs(output_duration - expected_duration) > 1.0:
+                    self.logger.warning(
+                        f"Output duration ({output_duration:.2f}s) differs from expected "
+                        f"({expected_duration:.2f}s) by {abs(output_duration - expected_duration):.2f}s"
+                    )
+            else:
+                raise FFmpegError(f"Output file was not created: {output_path}")
+
             return output_path
 
         except Exception as e:

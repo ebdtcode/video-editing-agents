@@ -5,7 +5,13 @@
 processing:
   min_segment_duration: 0.5  # Minimum segment duration in seconds
   max_segment_duration: 30.0  # Maximum segment duration in seconds
-  max_workers: 0  # Number of parallel workers (0 = auto-detect)
+  max_workers: 0  # Number of parallel workers for video processing (0 = auto-detect)
+
+  # TTS parallelization settings (IMPORTANT for GPU)
+  # Setting parallel_tts: false ensures sequential model loading on GPU
+  # This prevents multiple processes from competing for GPU memory
+  parallel_tts: false  # Disable parallel TTS to avoid GPU contention
+  tts_workers: 1  # Single worker for TTS generation on GPU
 
 # Filler word detection
 fillers:
@@ -63,7 +69,10 @@ video:
   # Transition effects between segments
   transitions:
     enabled: true
-    type: crossfade  # crossfade, dissolve, none
+    # Valid types: fade, dissolve, wipeleft, wiperight, wipeup, wipedown,
+    #              slideleft, slideright, slideup, slidedown, none
+    # Note: 'crossfade' is auto-mapped to 'fade' for compatibility
+    type: fade  # Use 'fade' for smooth crossfade effect
     duration: 0.3  # Transition duration in seconds
 
 # Output settings

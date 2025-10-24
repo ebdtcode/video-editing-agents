@@ -55,6 +55,21 @@ Examples:
   # Process video with default settings (GPU-accelerated, parallel TTS, subtitles, chapters)
   python video_edit.py --video input.mp4 --output final.mp4
 
+  # Use Ollama for content correction (free, local LLM)
+  python video_edit.py --video input.mp4 --output final.mp4 --llm-provider ollama --llm-model llama3.2:3b
+
+  # Use OpenAI for content correction
+  python video_edit.py --video input.mp4 --output final.mp4 --llm-provider openai --llm-model gpt-4o-mini --llm-api-key sk-...
+
+  # Use Anthropic Claude for content correction
+  python video_edit.py --video input.mp4 --output final.mp4 --llm-provider anthropic --llm-model claude-3-5-sonnet-20241022 --llm-api-key sk-ant-...
+
+  # Disable content correction (skip grammar fixes)
+  python video_edit.py --video input.mp4 --output final.mp4 --no-correction
+
+  # Ollama with custom host
+  python video_edit.py --video input.mp4 --output final.mp4 --llm-provider ollama --llm-api-key http://192.168.1.100:11434
+
   # Disable GPU acceleration (use CPU only)
   python video_edit.py --video input.mp4 --output final.mp4 --no-gpu
 
@@ -143,6 +158,31 @@ Examples:
         '--overwrite',
         action='store_true',
         help='Overwrite output file if it exists'
+    )
+
+    # Content correction / LLM options
+    parser.add_argument(
+        '--no-correction',
+        action='store_true',
+        help='Disable LLM-based content correction (skip grammar fixes)'
+    )
+
+    parser.add_argument(
+        '--llm-provider',
+        choices=['openai', 'anthropic', 'ollama'],
+        help='LLM provider for content correction (default: openai)'
+    )
+
+    parser.add_argument(
+        '--llm-model',
+        type=str,
+        help='LLM model to use (e.g., gpt-4o-mini, claude-3-5-sonnet-20241022, llama3.2:3b)'
+    )
+
+    parser.add_argument(
+        '--llm-api-key',
+        type=str,
+        help='API key for LLM provider (or Ollama host URL like http://localhost:11434)'
     )
 
     # TTS options
@@ -292,6 +332,20 @@ Examples:
         if args.keep_intermediates:
             config.output.keep_intermediates = True
 
+        # Content correction / LLM options
+        if args.no_correction:
+            config.content_correction.enabled = False
+
+        if args.llm_provider:
+            config.content_correction.mode = args.llm_provider
+
+        if args.llm_model:
+            config.content_correction.model = args.llm_model
+
+        if args.llm_api_key:
+            config.content_correction.api_key = args.llm_api_key
+
+        # TTS options
         if args.no_voice_cloning:
             config.tts.voice_cloning = False
 

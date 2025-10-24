@@ -63,7 +63,10 @@ video:
   # Transition effects between segments
   transitions:
     enabled: true
-    type: crossfade  # crossfade, dissolve, none
+    # Valid types: fade, dissolve, wipeleft, wiperight, wipeup, wipedown,
+    #              slideleft, slideright, slideup, slidedown, none
+    # Note: 'crossfade' is auto-mapped to 'fade' for compatibility
+    type: fade  # Use 'fade' for smooth crossfade effect
     duration: 0.3  # Transition duration in seconds
 
 # Output settings
