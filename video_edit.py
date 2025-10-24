@@ -91,6 +91,9 @@ Examples:
   # Use existing transcription
   python video_edit.py --video input.mp4 --transcription transcript.json --output final.mp4
 
+  # Edit and resume: Edit transcript and regenerate from TTS stage
+  python video_edit.py --video input.mp4 --output final.mp4 --from-corrected-transcript temp_segments/corrected_transcript.txt
+
   # Use custom configuration
   python video_edit.py --video input.mp4 --config custom.yaml --output final.mp4
 
@@ -119,6 +122,13 @@ Examples:
         '--transcription',
         type=Path,
         help='Path to existing WhisperX JSON transcription (optional)'
+    )
+
+    parser.add_argument(
+        '--from-corrected-transcript',
+        type=Path,
+        metavar='PATH',
+        help='Resume from edited transcript (skips stages 1-3, starts from TTS)'
     )
 
     # Configuration
@@ -413,7 +423,8 @@ Examples:
             output_path=args.output,
             transcription_json=args.transcription,
             overwrite=args.overwrite,
-            resume=args.resume
+            resume=args.resume,
+            from_corrected_transcript=args.from_corrected_transcript
         )
 
         # Generate report

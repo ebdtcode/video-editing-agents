@@ -344,8 +344,8 @@ def main():
     )
     parser.add_argument(
         '--config',
-        default='config_cpu.yaml',
-        help='Configuration file'
+        default=None,
+        help='Configuration file (default: auto-detect GPU, fallback to config_gpu.yaml)'
     )
     parser.add_argument(
         '--resume',
@@ -354,6 +354,22 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Auto-detect config file if not specified
+    if args.config is None:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                default_config = 'config_gpu.yaml'
+                print(f"🎮 GPU detected (CUDA available), using: {default_config}")
+            else:
+                default_config = 'config_cpu.yaml'
+                print(f"🖥️  No GPU detected, using: {default_config}")
+        except ImportError:
+            default_config = 'config_cpu.yaml'
+            print(f"⚠️  PyTorch not available, using: {default_config}")
+
+        args.config = default_config
 
     # Validate inputs
     json_file = Path(args.input)
@@ -371,6 +387,9 @@ def main():
     config_file = Path(args.config)
     if not config_file.exists():
         print(f"❌ Error: Config file not found: {config_file}")
+        print(f"\nAvailable configs:")
+        for cfg in Path('.').glob('config*.yaml'):
+            print(f"  - {cfg}")
         sys.exit(1)
 
     # Run regeneration

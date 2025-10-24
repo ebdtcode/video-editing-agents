@@ -184,7 +184,8 @@ class OrchestratorAgent:
                 # Load edited transcript and map to segments
                 corrected_segments = self._load_edited_transcript(
                     from_corrected_transcript,
-                    work_dir
+                    work_dir,
+                    video_path
                 )
 
                 # Set filler stats to N/A since we're skipping that stage
@@ -206,7 +207,7 @@ class OrchestratorAgent:
 
                 # Stage 3: Content Correction
                 self.logger.info("\n[Stage 3/6] Content Correction (Grammar & Clarity)")
-                corrected_segments = self._stage_content_correction(clean_segments, work_dir)
+                corrected_segments = self._stage_content_correction(clean_segments, work_dir, video_path)
 
             # Stage 4: TTS Generation
             self.logger.info("\n[Stage 4/6] TTS Generation")
@@ -345,7 +346,8 @@ class OrchestratorAgent:
     def _stage_content_correction(
         self,
         segments: List[CleanSegment],
-        work_dir: Path
+        work_dir: Path,
+        video_path: Path
     ) -> List[CleanSegment]:
         """Stage 3: Content Correction with LLM"""
         if not self.config.content_correction.enabled:
@@ -374,7 +376,7 @@ class OrchestratorAgent:
 
         # Save segment metadata for edit and resume feature
         metadata_path = work_dir / "segment_metadata.json"
-        self._save_segment_metadata(corrected_segments, metadata_path)
+        self._save_segment_metadata(corrected_segments, metadata_path, video_path)
 
         # Generate correction report if corrections were made
         if changes_count > 0:
@@ -846,3 +848,171 @@ class OrchestratorAgent:
         except Exception as e:
             self.logger.error(f"Failed to generate report: {e}")
             raise
+
+    def _save_segment_metadata(
+        self,
+        segments: List[CleanSegment],
+        metadata_path: Path,
+        video_path: Path
+    ):
+        """
+        Save segment metadata for edit and resume feature
+
+        Args:
+            segments: List of segments with timing info
+            metadata_path: Path to save metadata JSON
+            video_path: Original source video path for validation
+        """
+        import json
+        from datetime import datetime
+
+        metadata = {
+            'version': '1.0',
+            'created_at': datetime.now().isoformat(),
+            'source_video': str(video_path.resolve()),
+            'total_segments': len(segments),
+            'segments': []
+        }
+
+        for seg in segments:
+            metadata['segments'].append({
+                'segment_id': seg.segment_id,
+                'start': seg.start,
+                'end': seg.end,
+                'duration': round(seg.end - seg.start, 3),
+                'text': seg.text  # Save original corrected text for reference
+            })
+
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        self.logger.info(f"Saved segment metadata: {metadata_path}")
+        self.logger.info(f"  Source video: {video_path}")
+        self.logger.info(f"  Total segments: {len(segments)}")
+
+    def _load_edited_transcript(
+        self,
+        transcript_file: Path,
+        work_dir: Path,
+        video_path: Path
+    ) -> List[CleanSegment]:
+        """
+        Load edited transcript and map to segments with original timestamps
+
+        Args:
+            transcript_file: Path to edited transcript file
+            work_dir: Working directory containing segment_metadata.json
+            video_path: Current video path to validate against metadata
+
+        Returns:
+            List of CleanSegment objects with edited text and original timestamps
+
+        Raises:
+            VideoProcessingError: If metadata file not found or mismatch
+        """
+        import json
+
+        # Load metadata
+        metadata_path = work_dir / "segment_metadata.json"
+        if not metadata_path.exists():
+            raise VideoProcessingError(
+                f"Segment metadata not found: {metadata_path}\n"
+                "You need to run the full pipeline at least once before using edit and resume.\n"
+                "Run without --from-corrected-transcript first to generate metadata."
+            )
+
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+
+        # Validate source video path
+        if 'source_video' in metadata:
+            saved_video_path = Path(metadata['source_video']).resolve()
+            current_video_path = video_path.resolve()
+
+            if saved_video_path != current_video_path:
+                self.logger.warning(
+                    f"\n⚠️  VIDEO PATH MISMATCH ⚠️\n"
+                    f"Metadata was created from: {saved_video_path}\n"
+                    f"But you're now using:      {current_video_path}\n"
+                    f"\n"
+                    f"Timestamps in metadata reference the ORIGINAL video.\n"
+                    f"If you're using a different video file, timestamps may not align correctly.\n"
+                    f"Make sure you're using the same source video that was used in the initial run.\n"
+                )
+        else:
+            self.logger.warning(
+                "Metadata doesn't include source video path (old format). "
+                "Cannot validate video file match."
+            )
+
+        # Load edited transcript
+        if not transcript_file.exists():
+            raise VideoProcessingError(f"Edited transcript not found: {transcript_file}")
+
+        with open(transcript_file, 'r', encoding='utf-8') as f:
+            edited_lines = []
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Strip timestamp prefix if present: [1.04s - 12.17s] text
+                # This allows users to edit the file with timestamps for reference
+                import re
+                match = re.match(r'^\[[\d.]+s\s*-\s*[\d.]+s\]\s*(.+)$', line)
+                if match:
+                    # Extract text without timestamp
+                    text = match.group(1)
+                    edited_lines.append(text)
+                else:
+                    # No timestamp prefix, use line as-is
+                    edited_lines.append(line)
+
+        # Check if line count matches
+        if len(edited_lines) != len(metadata['segments']):
+            raise VideoProcessingError(
+                f"Line count mismatch!\n"
+                f"Edited transcript has {len(edited_lines)} lines\n"
+                f"But metadata has {len(metadata['segments'])} segments\n"
+                f"Make sure you keep the same number of lines when editing."
+            )
+
+        # Create CleanSegment objects with edited text and original timing
+        segments = []
+        for edited_text, seg_meta in zip(edited_lines, metadata['segments']):
+            segment = CleanSegment(
+                segment_id=seg_meta['segment_id'],
+                text=edited_text,  # Use edited text
+                start=seg_meta['start'],  # Keep original timing
+                end=seg_meta['end'],
+                words=[],  # Word-level timing not needed for TTS
+                original_text=seg_meta['text']  # Original text before user edits
+            )
+            segments.append(segment)
+
+        self.logger.info(
+            f"\n✅ Loaded {len(segments)} segments from edited transcript"
+        )
+        self.logger.info(
+            f"   Edited text: {transcript_file}"
+        )
+        self.logger.info(
+            f"   Timestamps: {metadata_path} (from original video)"
+        )
+        self.logger.info(
+            f"   Note: Timestamp prefixes like '[1.04s - 12.17s]' are automatically stripped"
+        )
+        self.logger.info(
+            f"\n📝 Edit-and-resume workflow:"
+        )
+        self.logger.info(
+            f"   1. Your edited text will be used for TTS generation (without timestamps)"
+        )
+        self.logger.info(
+            f"   2. Video segments will be extracted from ORIGINAL video using saved timestamps"
+        )
+        self.logger.info(
+            f"   3. Extracted video will be synchronized with new TTS audio"
+        )
+
+        return segments
