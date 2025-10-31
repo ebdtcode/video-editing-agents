@@ -93,6 +93,14 @@ class VideoProcessingAgent:
 
             # Cut video segment (without audio)
             raw_segment_path = output_dir / f"{segment.segment_id}_raw.mp4"
+
+            # Log video extraction timestamps
+            self.logger.info(
+                f"Extracting video segment {segment.segment_id}: "
+                f"from {segment.start:.3f}s to {segment.end:.3f}s "
+                f"(duration: {original_duration:.3f}s)"
+            )
+
             cut_video_segment(
                 video_path,
                 raw_segment_path,
@@ -187,7 +195,11 @@ class VideoProcessingAgent:
                 video_path,
                 audio_path,
                 output_path,
-                video_codec="copy"
+                video_codec="copy",
+                normalize_audio=self.config.audio_normalize,
+                target_level=self.config.audio_target_level,
+                target_peak=self.config.audio_target_peak,
+                loudness_range=self.config.audio_loudness_range
             )
 
         # Retime video
@@ -205,7 +217,11 @@ class VideoProcessingAgent:
             retimed_path,
             audio_path,
             output_path,
-            video_codec=self.config.codec
+            video_codec=self.config.codec,
+            normalize_audio=self.config.audio_normalize,
+            target_level=self.config.audio_target_level,
+            target_peak=self.config.audio_target_peak,
+            loudness_range=self.config.audio_loudness_range
         )
 
         # Clean up retimed temp file
@@ -234,7 +250,11 @@ class VideoProcessingAgent:
             video_path,
             audio_path,
             output_path,
-            video_codec="copy"
+            video_codec="copy",
+            normalize_audio=self.config.audio_normalize,
+            target_level=self.config.audio_target_level,
+            target_peak=self.config.audio_target_peak,
+            loudness_range=self.config.audio_loudness_range
         )
 
     def _precise_merge(
@@ -265,7 +285,11 @@ class VideoProcessingAgent:
             video_path,
             audio_path,
             output_path,
-            video_codec="copy"  # No re-encoding for maximum quality
+            video_codec="copy",  # No re-encoding for maximum quality
+            normalize_audio=self.config.audio_normalize,
+            target_level=self.config.audio_target_level,
+            target_peak=self.config.audio_target_peak,
+            loudness_range=self.config.audio_loudness_range
         )
 
     def _perfect_sync_merge(
@@ -323,7 +347,11 @@ class VideoProcessingAgent:
                 audio_path,
                 output_path,
                 video_codec=self.config.codec,
-                audio_codec="aac"
+                audio_codec="aac",
+                normalize_audio=self.config.audio_normalize,
+                target_level=self.config.audio_target_level,
+                target_peak=self.config.audio_target_peak,
+                loudness_range=self.config.audio_loudness_range
             )
 
             self.logger.debug(
@@ -459,13 +487,16 @@ class VideoProcessingAgent:
 
             # Build xfade filters between consecutive video segments
             current_video_label = video_labels[0]
+            cumulative_offset = 0.0
 
             for i in range(len(segments) - 1):
                 next_video_label = video_labels[i + 1]
                 output_video_label = f"[v{i}]" if i < len(segments) - 2 else "[outv]"
 
-                # Calculate offset (cumulative duration minus transition overlap)
-                offset = sum(seg.tts_duration for seg in segments[:i+1]) - (duration * i)
+                # Calculate offset: it's the point where the transition should start
+                # This is the end of the current segment minus the transition duration
+                offset = cumulative_offset + segments[i].tts_duration - duration
+                cumulative_offset = offset + duration  # Move to start of next segment
 
                 video_filter_parts.append(
                     f"{current_video_label}{next_video_label}xfade="
@@ -595,9 +626,26 @@ class VideoProcessingAgent:
                 check=True
             )
 
-            # Validate output file
+            # Validate output file and check for concatenation failure
             if output_path.exists():
-                output_duration = get_video_duration(output_path)
+                from src.utils.ffmpeg_utils import get_video_duration, get_audio_duration
+                output_video_duration = get_video_duration(output_path)
+                output_audio_duration = get_audio_duration(output_path)
+                
+                # Check if video and audio durations match (within 1 second tolerance)
+                if abs(output_video_duration - output_audio_duration) > 1.0:
+                    self.logger.error(
+                        f"Concatenation validation failed: "
+                        f"video duration ({output_video_duration:.2f}s) != "
+                        f"audio duration ({output_audio_duration:.2f}s)"
+                    )
+                    self.logger.warning("Falling back to simple concatenation without transitions")
+                    
+                    # Delete the bad output and retry with simple concatenation
+                    output_path.unlink()
+                    return self._concatenate_simple(segments, output_path)
+                
+                output_duration = output_video_duration
                 self.logger.info(
                     f"Created video with transitions: {output_path} "
                     f"(duration: {output_duration:.2f}s, expected: {expected_duration:.2f}s)"
@@ -615,10 +663,11 @@ class VideoProcessingAgent:
             return output_path
 
         except Exception as e:
-            self.logger.warning(
-                f"Transition concatenation failed: {e}. "
-                "Falling back to simple concatenation"
-            )
+            self.logger.error(f"Failed to concatenate with transitions: {e}")
+            self.logger.warning("Falling back to simple concatenation without transitions")
+            # Clean up partial output if it exists
+            if output_path.exists():
+                output_path.unlink()
             return self._concatenate_simple(segments, output_path)
 
     def create_final_video(
@@ -649,7 +698,11 @@ class VideoProcessingAgent:
             output_path,
             video_codec=self.config.codec,
             audio_codec="aac",
-            audio_bitrate="192k"
+            audio_bitrate="192k",
+            normalize_audio=self.config.audio_normalize,
+            target_level=self.config.audio_target_level,
+            target_peak=self.config.audio_target_peak,
+            loudness_range=self.config.audio_loudness_range
         )
 
     def validate_segment(self, segment: ProcessedSegment) -> Dict[str, any]:

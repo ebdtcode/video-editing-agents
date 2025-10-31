@@ -15,7 +15,30 @@ from pathlib import Path
 from datetime import datetime
 
 
-def export_transcript():
+def detect_source_video():
+    """Try to detect the source video from temp files."""
+    temp_dir = Path("temp_segments")
+    
+    # Look for temp video files that indicate source
+    for pattern in ["temp_*.mp4", "with_subs_*.mp4"]:
+        temp_files = list(temp_dir.glob(pattern))
+        if temp_files:
+            # Extract video name from temp file
+            temp_name = temp_files[0].stem
+            # Remove prefixes
+            for prefix in ["temp_", "with_subs_"]:
+                if temp_name.startswith(prefix):
+                    temp_name = temp_name[len(prefix):]
+            
+            # Try to find matching video in videos folder
+            video_file = Path("videos") / f"{temp_name}.mp4"
+            if video_file.exists():
+                return str(video_file)
+    
+    return None
+
+
+def export_transcript(source_video=None, output_file='editable_transcript.json'):
     """Export cleaned transcript to editable JSON format."""
 
     # Input file
@@ -66,11 +89,21 @@ def export_transcript():
         print("❌ Error: No segments found in transcript")
         return False
 
+    # Detect source video if not provided
+    if source_video is None:
+        source_video = detect_source_video()
+        if source_video:
+            print(f"🔍 Detected source video: {source_video}")
+        else:
+            print("⚠️  Warning: Could not auto-detect source video")
+            print("   You'll need to specify --video when regenerating")
+
     # Create export data
     export_data = {
         "metadata": {
             "exported_at": datetime.now().isoformat(),
             "source": str(cleaned_transcript),
+            "source_video": source_video,
             "total_segments": len(segments),
             "total_duration": round(segments[-1]["end_time"] - segments[0]["start_time"], 2),
             "instructions": {
@@ -85,12 +118,7 @@ def export_transcript():
     }
 
     # Output file
-    parser = argparse.ArgumentParser(description='Export transcript for editing')
-    parser.add_argument('--output', default='editable_transcript.json',
-                       help='Output JSON file (default: editable_transcript.json)')
-    args = parser.parse_args()
-
-    output_file = Path(args.output)
+    output_file = Path(output_file)
 
     # Write JSON
     with open(output_file, 'w', encoding='utf-8') as f:
@@ -106,12 +134,23 @@ def export_transcript():
     print("  1. Fix transcription errors in 'corrected_text'")
     print("  2. Set 'skip': true to exclude unwanted segments")
     print("  3. Add notes to document changes")
-    print(f"\nThen run:")
-    print(f"  python regenerate_from_corrections.py --input {output_file}")
+    print(f"Then run:")
+    if source_video:
+        print(f"  python regenerate_from_corrections.py --input {output_file}")
+        print(f"  (Video will be auto-detected from metadata: {source_video})")
+    else:
+        print(f"  python regenerate_from_corrections.py --input {output_file} --video <video_file>")
     print("=" * 80)
 
     return True
 
 
 if __name__ == "__main__":
-    export_transcript()
+    parser = argparse.ArgumentParser(description='Export transcript for editing')
+    parser.add_argument('--output', default='editable_transcript.json',
+                       help='Output JSON file (default: editable_transcript.json)')
+    parser.add_argument('--video', default=None,
+                       help='Source video file (if not specified, will try to auto-detect)')
+    args = parser.parse_args()
+    
+    export_transcript(source_video=args.video, output_file=args.output)

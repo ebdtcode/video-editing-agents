@@ -46,7 +46,8 @@ tts:
   # - "default": Use Chatterbox's default voice (no voice cloning)
   # - "auto": Auto-extract voice from first 30 seconds of video (voice cloning)
   # - "custom": Use a custom voice reference file (requires voice_reference path)
-  voice_mode: custom  # Options: default, auto, custom
+  # - "original": Skip TTS generation, use original video audio (preserves original speaker)
+  voice_mode: custom  # Options: default, auto, custom, original
 
   # Custom voice reference file (only used when voice_mode: custom)
   voice_reference: "voices/sample_voice_yt.wav"
@@ -65,15 +66,34 @@ video:
   quality: high  # high, medium, low
   codec: h264
   bitrate: 5M
+  
+  # Hardware acceleration settings
+  # GPU acceleration enabled with increased timeouts for long videos
+  gpu_acceleration: true  # Use NVENC for faster encoding
+  hwaccel: auto  # Auto-detect CUDA hardware decoding
+
+  # Audio normalization settings
+  # When enabled, normalizes audio volume to broadcast standards using FFmpeg loudnorm filter
+  audio_normalize: false  # Set to true to enable audio normalization
+  audio_target_level: -16.0  # Target integrated loudness in LUFS (-16 is broadcast standard, -23 for streaming)
+  audio_target_peak: -1.5  # Target true peak in dBTP (prevents clipping)
+  audio_loudness_range: 11.0  # Target loudness range in LU (dynamic range)
+  # Use cases:
+  #   - Low volume videos (quiet speakers, poor recording)
+  #   - Inconsistent volume across segments
+  #   - Professional broadcast standards compliance
+  # Note: Normalization adds processing time (~10-20% overhead)
 
   # Transition effects between segments
   transitions:
-    enabled: true
+    enabled: false  # DISABLED: Transitions cause audio sync issues and hide precise edit points
     # Valid types: fade, dissolve, wipeleft, wiperight, wipeup, wipedown,
     #              slideleft, slideright, slideup, slidedown, none
     # Note: 'crossfade' is auto-mapped to 'fade' for compatibility
     type: fade  # Use 'fade' for smooth crossfade effect
     duration: 0.3  # Transition duration in seconds
+    # For text correction workflows, simple concatenation (transitions disabled)
+    # is more reliable and makes it easier to verify that edits match exactly.
 
 # Output settings
 output:

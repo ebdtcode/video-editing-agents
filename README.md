@@ -334,6 +334,49 @@ tts:
   backend: chatterbox  # or 'coqui'
 ```
 
+### Voice Mode Options
+
+The pipeline supports 4 different voice modes for TTS generation:
+
+**1. Default Mode** - Use Chatterbox's built-in default voice (no voice cloning):
+```yaml
+tts:
+  voice_mode: default
+```
+
+**2. Auto Mode** - Automatically extract and clone voice from the first 30 seconds of your video:
+```yaml
+tts:
+  voice_mode: auto
+```
+
+**3. Custom Mode** - Use a custom voice reference file for voice cloning:
+```yaml
+tts:
+  voice_mode: custom
+  voice_reference: "voices/my_voice.wav"
+```
+
+**4. Original Mode** - Skip TTS generation entirely and use the original video audio:
+```yaml
+tts:
+  voice_mode: original
+```
+
+**When to use each mode:**
+- **default**: Quick processing, don't need voice cloning
+- **auto**: Want to clone the speaker's voice automatically
+- **custom**: Have a high-quality voice sample for better cloning
+- **original**: Only removing filler words, want to preserve the original speaker's voice and avoid TTS quality issues
+
+**Recommended workflow for text corrections:**
+1. Export transcript: `python export_transcript_for_editing.py`
+2. Correct transcript with LLM: `python auto_correct_transcript.py --input editable_transcript.json --provider ollama --model mistral`
+3. Regenerate with original audio: Set `voice_mode: original` in config
+4. Run: `python regenerate_from_corrections.py --input editable_transcript_corrected.json`
+
+This workflow is much faster and preserves audio quality since it skips TTS generation.
+
 ### Video Quality Settings
 
 Adjust output quality:

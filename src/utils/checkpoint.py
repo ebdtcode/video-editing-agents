@@ -122,6 +122,19 @@ class CheckpointManager:
         return (segment_id in self.state['segments'] and
                 self.state['segments'][segment_id].get('status') == 'completed')
 
+    def is_segment_failed(self, segment_id: str) -> bool:
+        """
+        Check if a segment has previously failed
+
+        Args:
+            segment_id: Unique segment identifier
+
+        Returns:
+            True if segment is marked as failed
+        """
+        return (segment_id in self.state['segments'] and
+                self.state['segments'][segment_id].get('status') == 'failed')
+
     def get_segment_status(self, segment_id: str) -> Optional[str]:
         """
         Get segment status

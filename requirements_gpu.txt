@@ -1,0 +1,21 @@
+# GPU-Optimized Requirements for Video Edit Agents
+# Install PyTorch with CUDA support first, then other dependencies
+
+# Core dependencies
+pyyaml>=6.0
+psutil>=5.9.0
+tqdm>=4.65.0
+
+# PyTorch with CUDA 12.1 support (install this first!)
+--index-url https://download.pytorch.org/whl/cu121
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Audio/Video processing
+ffmpeg-python>=0.2.0
+
+# Transcription - WhisperX
+git+https://github.com/m-bain/whisperX.git
+
+# TTS - Chatterbox
+chatterbox-tts>=0.1.0

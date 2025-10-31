@@ -55,7 +55,7 @@ class TranscriptionConfig:
 class TTSConfig:
     """Configuration for TTS generation"""
     backend: str = "chatterbox"  # 'chatterbox', 'coqui', 'elevenlabs'
-    voice_mode: str = "auto"  # 'default', 'custom', 'auto'
+    voice_mode: str = "auto"  # 'default', 'custom', 'auto', 'original'
     voice_reference: Optional[str] = None  # Path to custom voice reference audio file
     sample_rate: int = 44100
     normalize: bool = True
@@ -79,10 +79,10 @@ class TTSConfig:
                 self.voice_mode = "default"
 
         # Validate voice_mode
-        if self.voice_mode not in ["default", "custom", "auto"]:
+        if self.voice_mode not in ["default", "custom", "auto", "original"]:
             raise ConfigurationError(
                 f"Invalid voice_mode: {self.voice_mode}. "
-                "Must be 'default', 'custom', or 'auto'"
+                "Must be 'default', 'custom', 'auto', or 'original'"
             )
 
         # Validate that custom mode has a reference path
@@ -112,6 +112,13 @@ class VideoConfig:
     bitrate: str = "5M"
     gpu_acceleration: bool = True  # Use GPU encoding (NVENC) if available
     hwaccel: str = "auto"  # 'auto', 'cuda', 'none'
+    
+    # Audio normalization settings
+    audio_normalize: bool = False  # Enable audio normalization
+    audio_target_level: float = -16.0  # Target integrated loudness (LUFS), -16 is broadcast standard
+    audio_target_peak: float = -1.5  # Target true peak (dBTP)
+    audio_loudness_range: float = 11.0  # Target loudness range (LU)
+    
     transitions: TransitionConfig = field(default_factory=TransitionConfig)
 
 

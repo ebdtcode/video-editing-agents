@@ -78,22 +78,24 @@ def run_ffmpeg_safe(
     cmd: List[str],
     error_msg: str,
     capture_output: bool = True,
-    check: bool = True
+    check: bool = True,
+    timeout: int = 900
 ) -> subprocess.CompletedProcess:
     """
-    Run FFmpeg command with error handling
+    Run FFmpeg command with error handling and timeout protection
 
     Args:
         cmd: FFmpeg command as list of strings
         error_msg: Error message to display on failure
         capture_output: Whether to capture stdout/stderr
         check: Whether to raise exception on non-zero exit
+        timeout: Maximum seconds to wait (default 900 = 15 minutes for CUDA stability)
 
     Returns:
         CompletedProcess instance
 
     Raises:
-        FFmpegError: If command fails and check=True
+        FFmpegError: If command fails, times out, or check=True
     """
     try:
         logger.debug(f"Running FFmpeg: {' '.join(cmd)}")
@@ -102,7 +104,8 @@ def run_ffmpeg_safe(
             cmd,
             capture_output=capture_output,
             text=True,
-            check=False
+            check=False,
+            timeout=timeout
         )
 
         if check and result.returncode != 0:
@@ -112,6 +115,12 @@ def run_ffmpeg_safe(
 
         return result
 
+    except subprocess.TimeoutExpired:
+        raise FFmpegError(
+            f"{error_msg}: Command timeout after {timeout}s\n"
+            f"Command: {' '.join(cmd)}\n"
+            f"This may indicate corrupted video frames or FFmpeg deadlock."
+        )
     except FileNotFoundError:
         raise FFmpegError("FFmpeg not found. Please install FFmpeg and ensure it's in PATH")
     except Exception as e:
@@ -371,12 +380,6 @@ def concatenate_videos(
     if not video_list:
         raise FFmpegError("Cannot concatenate empty video list")
 
-    # Detect fps from first video segment
-    original_fps = get_video_fps(video_list[0])
-
-    # Get optimal codec
-    video_codec = _get_video_codec(use_gpu)
-
     # Create concat list file
     if concat_file is None:
         concat_file = output_path.parent / f"{output_path.stem}_concat.txt"
@@ -384,6 +387,12 @@ def concatenate_videos(
     with open(concat_file, 'w') as f:
         for video_path in video_list:
             f.write(f"file '{video_path.resolve()}'\n")
+
+    # Detect fps from first video segment
+    original_fps = get_video_fps(video_list[0])
+
+    # Get optimal codec
+    video_codec = _get_video_codec(use_gpu)
 
     cmd = [
         'ffmpeg', '-y',
@@ -411,7 +420,9 @@ def concatenate_videos(
         check=True
     )
 
-    logger.info(f"Concatenated {len(video_list)} videos to {output_path} at {original_fps} fps using {video_codec}")
+    codec_info = f"{video_codec}"
+    fps_info = f" at {original_fps} fps"
+    logger.info(f"Concatenated {len(video_list)} videos to {output_path}{fps_info} using {codec_info}")
     return output_path
 
 
@@ -421,7 +432,11 @@ def merge_video_audio(
     output_path: Path,
     video_codec: str = "copy",
     audio_codec: str = "aac",
-    audio_bitrate: str = "192k"
+    audio_bitrate: str = "192k",
+    normalize_audio: bool = False,
+    target_level: float = -16.0,
+    target_peak: float = -1.5,
+    loudness_range: float = 11.0
 ) -> Path:
     """
     Merge video and audio files
@@ -433,6 +448,10 @@ def merge_video_audio(
         video_codec: Video codec (default: copy)
         audio_codec: Audio codec (default: aac)
         audio_bitrate: Audio bitrate (default: 192k)
+        normalize_audio: Apply loudnorm filter for audio normalization
+        target_level: Target integrated loudness in LUFS (default: -16.0)
+        target_peak: Target true peak in dBTP (default: -1.5)
+        loudness_range: Target loudness range in LU (default: 11.0)
 
     Returns:
         Path to merged output
@@ -440,6 +459,20 @@ def merge_video_audio(
     Raises:
         FFmpegError: If merge fails
     """
+    # Build audio filter if normalization is enabled
+    audio_filter = None
+    if normalize_audio:
+        audio_filter = (
+            f"loudnorm="
+            f"I={target_level}:"
+            f"TP={target_peak}:"
+            f"LRA={loudness_range}"
+        )
+        logger.info(
+            f"Audio normalization enabled: "
+            f"target={target_level}LUFS, peak={target_peak}dBTP, LRA={loudness_range}LU"
+        )
+    
     cmd = [
         'ffmpeg', '-y',
         '-i', str(video_path),
@@ -447,11 +480,18 @@ def merge_video_audio(
         '-c:v', video_codec,
         '-c:a', audio_codec,
         '-b:a', audio_bitrate,
+    ]
+    
+    # Add audio filter if normalization is enabled
+    if audio_filter:
+        cmd.extend(['-af', audio_filter])
+    
+    cmd.extend([
         '-map', '0:v:0',
         '-map', '1:a:0',
         '-shortest',
         str(output_path)
-    ]
+    ])
 
     run_ffmpeg_safe(
         cmd,

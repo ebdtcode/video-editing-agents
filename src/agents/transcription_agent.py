@@ -82,6 +82,7 @@ class TranscriptionAgent:
             cmd = self._build_whisperx_command(audio_path, output_dir)
 
             # Run transcription
+            self.logger.info(f"Running WhisperX: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -89,13 +90,41 @@ class TranscriptionAgent:
                 check=False
             )
 
-            if result.returncode != 0:
+            # Log stdout and stderr for debugging
+            if result.stdout:
+                self.logger.debug(f"WhisperX stdout:\n{result.stdout}")
+            if result.stderr:
+                self.logger.debug(f"WhisperX stderr:\n{result.stderr}")
+
+            # Check if output file exists (WhisperX sometimes succeeds despite non-zero return code)
+            json_files = list(output_dir.glob(f"{audio_path.stem}*.json"))
+
+            if not json_files:
+                # No output file - this is a real failure
+                # Extract actual error from stderr and stdout
+                error_lines = []
+                for line in (result.stderr + '\n' + result.stdout).split('\n'):
+                    line_lower = line.lower()
+                    if any(keyword in line_lower for keyword in ['error', 'exception', 'traceback', 'failed', 'fatal']):
+                        error_lines.append(line)
+
+                error_msg = '\n'.join(error_lines) if error_lines else "Unknown error"
+
                 raise TranscriptionError(
-                    f"WhisperX failed: {result.stderr}\n"
-                    f"Command: {' '.join(cmd)}"
+                    f"WhisperX failed to produce output (return code {result.returncode})\n\n"
+                    f"Likely errors:\n{error_msg}\n\n"
+                    f"Command: {' '.join(cmd)}\n\n"
+                    f"Full stderr:\n{result.stderr}\n\n"
+                    f"Full stdout:\n{result.stdout}"
+                )
+            elif result.returncode != 0:
+                # Output file exists but non-zero return code - just log warning
+                self.logger.warning(
+                    f"WhisperX returned non-zero exit code ({result.returncode}) but produced output. "
+                    f"This is likely due to warnings being treated as errors. Continuing..."
                 )
 
-            # Find output JSON file
+            # Find output JSON file (should exist now)
             json_files = list(output_dir.glob(f"{audio_path.stem}*.json"))
             if not json_files:
                 raise TranscriptionError(

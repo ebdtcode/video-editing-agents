@@ -35,7 +35,15 @@ transcription:
 # Text-to-Speech settings
 tts:
   backend: chatterbox  # Options: chatterbox, coqui
-  voice_cloning: true  # Clone voice from original audio
+  
+  # Voice mode: How to select the TTS voice
+  # - "default": Use Chatterbox's default voice (no voice cloning)
+  # - "auto": Auto-extract voice from first 30 seconds of video (voice cloning)
+  # - "custom": Use a custom voice reference file (requires voice_reference path)
+  # - "original": Skip TTS generation, use original video audio (preserves original speaker)
+  voice_mode: auto  # Options: default, auto, custom, original
+  
+  voice_cloning: true  # Legacy setting (use voice_mode instead)
   sample_rate: 44100
   normalize: true  # Normalize audio volume
   device: cuda  # 'cuda' for GPU, 'cpu' for CPU
@@ -46,6 +54,12 @@ video:
   quality: high  # high, medium, low
   codec: h264
   bitrate: 5M
+
+  # Audio normalization settings
+  audio_normalize: false  # Enable audio normalization (adds 10-20% processing time)
+  audio_target_level: -16.0  # Target loudness in LUFS (-16 broadcast, -23 streaming)
+  audio_target_peak: -1.5  # Target true peak in dBTP
+  audio_loudness_range: 11.0  # Target loudness range in LU
 
   # Transition effects between segments
   transitions:

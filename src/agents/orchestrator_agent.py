@@ -181,6 +181,23 @@ class OrchestratorAgent:
                     f"Starting from Stage 4 (TTS Generation)\n"
                 )
 
+                # Force clear checkpoint in edit-and-resume mode to avoid stale segments
+                if not resume:
+                    self.logger.info("Cleaning up old TTS and video files for fresh generation...")
+                    # Clean TTS audio directory
+                    tts_dir = work_dir / "tts_audio"
+                    if tts_dir.exists():
+                        for old_file in tts_dir.glob("*.wav"):
+                            old_file.unlink()
+
+                    # Clean video segments directory
+                    video_dir = work_dir / "video_segments"
+                    if video_dir.exists():
+                        for old_file in video_dir.glob("*.mp4"):
+                            old_file.unlink()
+
+                    self.logger.info("Old files cleaned. Regenerating from edited transcript...")
+
                 # Load edited transcript and map to segments
                 corrected_segments = self._load_edited_transcript(
                     from_corrected_transcript,
@@ -405,6 +422,11 @@ class OrchestratorAgent:
         reference_audio = None
         voice_mode = self.config.tts.voice_mode
 
+        # Check if using original audio (skip TTS entirely)
+        if voice_mode == "original":
+            self.logger.info("Using original video audio (skipping TTS generation)")
+            return self._extract_original_audio_segments(segments, work_dir, video_path)
+
         if voice_mode == "default":
             # Use Chatterbox default voice (no voice cloning)
             self.logger.info("Using default Chatterbox voice (no voice cloning)")
@@ -478,6 +500,16 @@ class OrchestratorAgent:
                         if audio_file.exists():
                             tts_audio_map[segment.segment_id] = audio_file
                         continue
+                    
+                    # Skip if previously failed (with warning)
+                    if resume and self.checkpoint.is_segment_failed(f"tts_{segment.segment_id}"):
+                        self.logger.warning(
+                            f"Skipping TTS segment {segment.segment_id} (previously failed/timeout). "
+                            f"Review logs or manually regenerate this segment."
+                        )
+                        failed_segments.append(segment.segment_id)
+                        pbar.update(1)
+                        continue
 
                     # Submit job
                     if self.config.parallel_tts:
@@ -499,13 +531,19 @@ class OrchestratorAgent:
                         )
                     future_to_segment[future] = segment
 
-                # Collect results
-                for future in concurrent.futures.as_completed(future_to_segment):
+                # Collect results with timeout protection
+                for future in concurrent.futures.as_completed(future_to_segment, timeout=7200):
                     segment = future_to_segment[future]
                     try:
-                        audio_path = future.result()
+                        audio_path = future.result(timeout=300)  # 5 minute timeout per segment
                         tts_audio_map[segment.segment_id] = audio_path
                         self.checkpoint.mark_segment_completed(f"tts_{segment.segment_id}")
+                    except concurrent.futures.TimeoutError:
+                        self.logger.error(
+                            f"TTS generation timeout for {segment.segment_id} (5 minutes exceeded)"
+                        )
+                        failed_segments.append(segment.segment_id)
+                        self.checkpoint.mark_segment_failed(f"tts_{segment.segment_id}", "Timeout after 300s")
                     except Exception as e:
                         self.logger.error(
                             f"Failed to generate TTS for {segment.segment_id}: {e}"
@@ -535,6 +573,72 @@ class OrchestratorAgent:
             reference_audio
         )
 
+    def _extract_original_audio_segments(
+        self,
+        segments: List[CleanSegment],
+        work_dir: Path,
+        video_path: Path
+    ) -> Dict[str, Path]:
+        """
+        Extract original audio segments from the video (skip TTS generation).
+        Used when voice_mode is 'original' to preserve the original speaker's voice.
+
+        Args:
+            segments: List of cleaned segments
+            work_dir: Working directory
+            video_path: Path to original video file
+
+        Returns:
+            Dictionary mapping segment_id to audio file path
+        """
+        from ..utils.ffmpeg_utils import run_ffmpeg_safe
+
+        tts_dir = work_dir / "tts_audio"
+        tts_dir.mkdir(exist_ok=True)
+
+        audio_map = {}
+
+        self.logger.info(f"Extracting original audio for {len(segments)} segments")
+
+        with tqdm(total=len(segments), desc="Extracting Original Audio") as pbar:
+            for segment in segments:
+                # Output path for this segment's audio
+                # Match the TTS naming convention: tts_{segment_id}.wav
+                audio_file = tts_dir / f"tts_{segment.segment_id}.wav"
+
+                # Extract audio for this time range
+                try:
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-ss', str(segment.start),
+                        '-to', str(segment.end),
+                        '-i', str(video_path),
+                        '-vn',  # No video
+                        '-acodec', 'pcm_s16le',
+                        '-ar', '16000',  # Match TTS sample rate
+                        '-ac', '1',  # Mono
+                        str(audio_file)
+                    ]
+
+                    run_ffmpeg_safe(
+                        cmd,
+                        error_msg=f"Failed to extract audio for segment {segment.segment_id}",
+                        timeout=60
+                    )
+                    audio_map[segment.segment_id] = audio_file
+                    self.logger.debug(f"Extracted audio for {segment.segment_id}: {audio_file}")
+
+                except Exception as e:
+                    self.logger.error(f"Failed to extract audio for {segment.segment_id}: {e}")
+                    raise VideoProcessingError(
+                        f"Failed to extract original audio for segment {segment.segment_id}: {e}"
+                    )
+
+                pbar.update(1)
+
+        self.logger.info(f"Successfully extracted original audio for {len(audio_map)} segments")
+        return audio_map
+
     def _stage_video_processing(
         self,
         video_path: Path,
@@ -563,6 +667,16 @@ class OrchestratorAgent:
                         pbar.update(1)
                         # TODO: Load existing processed segment
                         continue
+                    
+                    # Skip if previously failed (with warning)
+                    if resume and self.checkpoint.is_segment_failed(f"video_{segment.segment_id}"):
+                        self.logger.warning(
+                            f"Skipping video segment {segment.segment_id} (previously failed/timeout). "
+                            f"Review logs or manually process this segment."
+                        )
+                        failed_segments.append(segment.segment_id)
+                        pbar.update(1)
+                        continue
 
                     tts_audio = tts_audio_map.get(segment.segment_id)
                     if not tts_audio:
@@ -581,13 +695,19 @@ class OrchestratorAgent:
                     )
                     future_to_segment[future] = segment
 
-                # Collect results
-                for future in concurrent.futures.as_completed(future_to_segment):
+                # Collect results with timeout protection
+                for future in concurrent.futures.as_completed(future_to_segment, timeout=7200):
                     segment = future_to_segment[future]
                     try:
-                        processed_seg = future.result()
+                        processed_seg = future.result(timeout=1200)  # 20 minute timeout per segment (allows for 15min FFmpeg + overhead)
                         processed_segments.append(processed_seg)
                         self.checkpoint.mark_segment_completed(f"video_{segment.segment_id}")
+                    except concurrent.futures.TimeoutError:
+                        self.logger.error(
+                            f"Video processing timeout for {segment.segment_id} (10 minutes exceeded)"
+                        )
+                        failed_segments.append(segment.segment_id)
+                        self.checkpoint.mark_segment_failed(f"video_{segment.segment_id}", "Timeout after 600s")
                     except Exception as e:
                         self.logger.error(
                             f"Failed to process video for {segment.segment_id}: {e}"
@@ -599,6 +719,22 @@ class OrchestratorAgent:
 
         # Sort segments by ID to maintain order
         processed_segments.sort(key=lambda x: x.segment_id)
+
+        self.logger.info(f"Processed {len(processed_segments)} video segments")
+        if len(processed_segments) > 0:
+            self.logger.debug(
+                f"First segment: {processed_segments[0].segment_id} "
+                f"(original: {processed_segments[0].original_duration:.3f}s, "
+                f"TTS: {processed_segments[0].tts_duration:.3f}s, "
+                f"speed: {processed_segments[0].speed_factor:.3f}x)"
+            )
+            if len(processed_segments) > 1:
+                self.logger.debug(
+                    f"Last segment: {processed_segments[-1].segment_id} "
+                    f"(original: {processed_segments[-1].original_duration:.3f}s, "
+                    f"TTS: {processed_segments[-1].tts_duration:.3f}s, "
+                    f"speed: {processed_segments[-1].speed_factor:.3f}x)"
+                )
 
         if failed_segments:
             raise VideoProcessingError(
@@ -989,6 +1125,14 @@ class OrchestratorAgent:
                 original_text=seg_meta['text']  # Original text before user edits
             )
             segments.append(segment)
+
+            # Debug logging for first few segments
+            if len(segments) <= 3:
+                self.logger.debug(
+                    f"Loaded segment {segment.segment_id}: "
+                    f"[{segment.start:.3f}s - {segment.end:.3f}s] "
+                    f"text={edited_text[:50]}..."
+                )
 
         self.logger.info(
             f"\n✅ Loaded {len(segments)} segments from edited transcript"
